@@ -57,6 +57,7 @@ import {
   buildMeetingUrl,
   formatClockTime,
   formatDuration,
+  formatFileSize,
   meetingPath,
   parseMeetingLink,
 } from '../src/lib/format'
@@ -167,6 +168,13 @@ checks.push({
     expect(formatClockTime(new Date(2026, 0, 5, 14, 7).getTime()) === '14:07', 'heure d’un message')
     expect(formatClockTime(new Date(2026, 0, 5, 9, 3, 30).getTime()) === '09:03', 'heure à un chiffre complétée')
     expect(formatClockTime(Number.NaN) === '--:--', 'horodatage invalide neutre')
+
+    expect(formatFileSize(0) === '0 o', 'fichier vide affiché en octets')
+    expect(formatFileSize(512) === '512 o', 'petite taille en octets')
+    expect(formatFileSize(1024) === '1 Ko', 'un kibioctet exact')
+    expect(formatFileSize(2048) === '2 Ko', 'taille ronde en kilo-octets')
+    expect(formatFileSize(1_468_006) === '1,4 Mo', 'taille en méga-octets, décimale française')
+    expect(formatFileSize(Number.NaN) === '0 o', 'taille inconnue neutre')
   },
 })
 
@@ -448,13 +456,18 @@ checks.push({
       chat: {
         available: true,
         canSend: true,
+        canSendFiles: true,
         sending: false,
+        sendingFile: false,
         error: null,
+        fileError: null,
         unavailableReason: null,
         maxTextLength: 1000,
+        maxFileBytes: 25 * 1024 * 1024,
         messages: [
           {
             id: 'm1',
+            kind: 'text',
             text: longWord,
             authorName: 'Aurore',
             isLocal: false,
@@ -463,6 +476,7 @@ checks.push({
         ],
       },
       sendChatMessage: async () => true,
+      sendChatFile: async () => true,
     } as unknown as MeetingContextValue
 
     const html = renderToStaticMarkup(
@@ -989,22 +1003,35 @@ checks.push({
   run: () => {
     const renderChat = (
       available: boolean,
-      messages: { id: string; text: string; authorName: string; isLocal: boolean; sentAt: number }[] = [],
+      messages: {
+        id: string
+        kind: 'text'
+        text: string
+        authorName: string
+        isLocal: boolean
+        sentAt: number
+      }[] = [],
+      filesAvailable = false,
     ) => {
       const context = {
         closePanel: () => {},
         chat: {
           available,
           canSend: available,
+          canSendFiles: filesAvailable,
           sending: false,
+          sendingFile: false,
           error: null,
+          fileError: null,
           unavailableReason: available
             ? null
             : 'Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.',
           maxTextLength: 500,
+          maxFileBytes: 25 * 1024 * 1024,
           messages,
         },
         sendChatMessage: async () => true,
+        sendChatFile: async () => true,
       } as unknown as MeetingContextValue
 
       return renderToStaticMarkup(
@@ -1041,8 +1068,8 @@ checks.push({
 
     // Ancrage en bas et ordre chronologique du fil.
     const thread = renderChat(true, [
-      { id: 'm1', text: 'Premier message', authorName: 'Aurore', isLocal: false, sentAt: 1 },
-      { id: 'm2', text: 'Second message', authorName: 'Aurore', isLocal: false, sentAt: 2 },
+      { id: 'm1', kind: 'text', text: 'Premier message', authorName: 'Aurore', isLocal: false, sentAt: 1 },
+      { id: 'm2', kind: 'text', text: 'Second message', authorName: 'Aurore', isLocal: false, sentAt: 2 },
     ])
     expect(thread.includes('mt-auto'), 'le fil est ancré au bas de la zone')
     expect(
@@ -1071,6 +1098,81 @@ checks.push({
         clientHeight: 500,
       }),
       'juste au-delà de la tolérance → pas de suivi',
+    )
+
+    // --- Fichier joint ----------------------------------------------------
+    // Un message de type fichier s'affiche avec son nom, sa taille et un lien
+    // de téléchargement fourni par la réunion.
+    const fileHtml = renderToStaticMarkup(
+      <MeetingContext.Provider
+        value={
+          {
+            closePanel: () => {},
+            chat: {
+              available: true,
+              canSend: true,
+              canSendFiles: true,
+              sending: false,
+              sendingFile: false,
+              error: null,
+              fileError: null,
+              unavailableReason: null,
+              maxTextLength: 500,
+              maxFileBytes: 25 * 1024 * 1024,
+              messages: [
+                {
+                  id: 'f1',
+                  kind: 'file',
+                  authorName: 'Aurore',
+                  isLocal: false,
+                  sentAt: 1,
+                  file: {
+                    name: 'compte-rendu.pdf',
+                    bytes: 1_468_006,
+                    url: 'https://exemple.test/f/1',
+                  },
+                },
+              ],
+            },
+            sendChatMessage: async () => true,
+            sendChatFile: async () => true,
+          } as unknown as MeetingContextValue
+        }
+      >
+        <ChatPanel />
+      </MeetingContext.Provider>,
+    )
+
+    expect(fileHtml.includes('compte-rendu.pdf'), 'nom du fichier affiché')
+    expect(fileHtml.includes('1,4 Mo'), 'taille du fichier lisible')
+    expect(fileHtml.includes('href="https://exemple.test/f/1"'), 'lien de téléchargement rendu')
+    expect(/rel="noopener noreferrer"/.test(fileHtml), 'lien de fichier isolé de la page')
+    expect(
+      fileHtml.includes('aria-label="Télécharger compte-rendu.pdf"'),
+      'lien de fichier nommé pour l’accessibilité',
+    )
+    expect(!fileHtml.includes('undefined'), 'aucun texte parasite dans la bulle de fichier')
+
+    // Commande de pièce jointe : active, ou inerte quand le profil l'interdit.
+    // La classe contient « disabled:… » (variantes Tailwind) : elle est retirée
+    // avant la recherche, pour ne tester que l'attribut `disabled`.
+    const attachButton = (html: string) =>
+      (/<button[^>]*aria-label="Joindre un fichier"[^>]*>/.exec(html)?.[0] ?? '').replace(
+        /class="[^"]*"/,
+        '',
+      )
+
+    expect(attachButton(fileHtml).length > 0, 'commande « Joindre un fichier » présente')
+    expect(!attachButton(fileHtml).includes('disabled'), 'fichiers autorisés → commande active')
+    expect(
+      attachButton(renderChat(true)).includes('disabled'),
+      'fichiers refusés → commande désactivée',
+    )
+    expect(
+      renderChat(true, [], true).includes(
+        'il sera téléchargeable par les participants',
+      ),
+      'invitation à joindre un fichier quand c’est permis',
     )
   },
 })

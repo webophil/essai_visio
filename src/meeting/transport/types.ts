@@ -63,6 +63,14 @@ export interface MeetingTransport {
    */
   sendChatMessage(text: string): Promise<boolean>
 
+  /**
+   * Partage un fichier avec les participants connectés.
+   * L'application ne stocke rien : le fichier transite par la réunion et son
+   * lien n'a de sens que pour ceux qui y sont. Renvoie `true` quand il a été
+   * accepté par le SDK.
+   */
+  sendChatFile(file: File): Promise<boolean>
+
   /** Client RealtimeKit, exposé uniquement à l'interface de la salle. */
   getClient(): RTKClient | null
 

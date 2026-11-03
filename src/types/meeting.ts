@@ -90,8 +90,20 @@ export interface ScreenShareState {
  */
 export type VideoEffectId = 'none' | 'blur'
 
-/** Message du chat de réunion, tel qu'affiché dans le panneau. */
-export interface ChatMessageView {
+/**
+ * Fichier joint à un message : ses métadonnées et le lien de téléchargement
+ * délivré par la réunion. Le contenu du fichier n'est jamais lu par
+ * l'application, qui ne conserve qu'un lien valable pour les participants.
+ */
+export interface ChatAttachmentView {
+  name: string
+  /** Taille annoncée par l'expéditeur, en octets (`0` si inconnue). */
+  bytes: number
+  url: string
+}
+
+/** Champs communs à tous les messages affichés dans le panneau. */
+interface ChatMessageBase {
   id: string
   /** Nom affiché de l'auteur, fourni par le SDK. */
   authorName: string
@@ -99,8 +111,31 @@ export interface ChatMessageView {
   isLocal: boolean
   /** Horodatage de réception (millisecondes). */
   sentAt: number
+}
+
+/** Message écrit. */
+export interface ChatTextMessageView extends ChatMessageBase {
+  kind: 'text'
   text: string
 }
+
+/** Message portant un fichier à télécharger. */
+export interface ChatFileMessageView extends ChatMessageBase {
+  kind: 'file'
+  file: ChatAttachmentView
+}
+
+/** Message du chat de réunion, tel qu'affiché dans le panneau. */
+export type ChatMessageView = ChatTextMessageView | ChatFileMessageView
+
+/**
+ * Taille maximale acceptée pour un fichier partagé (25 Mo).
+ *
+ * C'est une garde de l'application, pas une limite de la plateforme : au-delà,
+ * le téléversement est refusé avant tout envoi, avec un message explicite
+ * plutôt qu'un échec réseau difficile à interpréter.
+ */
+export const MAX_CHAT_FILE_BYTES = 25 * 1024 * 1024
 
 /**
  * État du chat de réunion.
@@ -110,27 +145,39 @@ export interface ChatMessageView {
 export interface ChatState {
   /** Le chat est-il proposé par le profil de participant ? */
   available: boolean
-  /** L'envoi est-il autorisé par le profil de participant ? */
+  /** L'envoi de messages écrits est-il autorisé par le profil de participant ? */
   canSend: boolean
+  /** L'envoi de fichiers est-il autorisé par le profil de participant ? */
+  canSendFiles: boolean
   /** Explication affichée quand le chat n'est pas utilisable. */
   unavailableReason: string | null
   /** Longueur maximale d'un message, imposée par le SDK. */
   maxTextLength: number
+  /** Taille maximale acceptée pour un fichier, en octets. */
+  maxFileBytes: number
   messages: ChatMessageView[]
-  /** Envoi en cours. */
+  /** Envoi d'un message écrit en cours. */
   sending: boolean
-  /** Dernière erreur d'envoi, en français. */
+  /** Envoi d'un fichier en cours. */
+  sendingFile: boolean
+  /** Dernière erreur d'envoi de message, en français. */
   error: string | null
+  /** Dernière erreur d'envoi de fichier, en français. */
+  fileError: string | null
 }
 
 export const EMPTY_CHAT_STATE: ChatState = {
   available: false,
   canSend: false,
+  canSendFiles: false,
   unavailableReason: null,
   maxTextLength: 500,
+  maxFileBytes: MAX_CHAT_FILE_BYTES,
   messages: [],
   sending: false,
+  sendingFile: false,
   error: null,
+  fileError: null,
 }
 
 /** Erreur lisible remontée par la couche temps réel. */

@@ -83,6 +83,28 @@ export function formatClockTime(milliseconds: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/**
+ * Taille d'un fichier, lisible en français : `512 o`, `12 Ko`, `1,4 Mo`.
+ * Les unités sont binaires (1 Ko = 1024 o), comme dans les gestionnaires de
+ * fichiers courants, et la décimale utilise la virgule.
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 o'
+
+  const units = ['o', 'Ko', 'Mo', 'Go']
+  let value = bytes
+  let unit = 0
+
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+
+  // Un octet près pour les petites valeurs, une décimale au-delà.
+  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10
+  return `${String(rounded).replace('.', ',')} ${units[unit]}`
+}
+
 /** Accord simple pour les compteurs (« 1 participant », « 2 participants »). */
 export function pluralize(count: number, singular: string, plural: string): string {
   return count > 1 ? plural : singular

@@ -52,6 +52,8 @@ export interface MeetingContextValue {
   chat: ChatState
   /** Envoie un message aux participants connectés (`true` si accepté). */
   sendChatMessage: (text: string) => Promise<boolean>
+  /** Partage un fichier avec les participants connectés (`true` si accepté). */
+  sendChatFile: (file: File) => Promise<boolean>
 
   /** Effet vidéo local actif (aucun effet par défaut). */
   videoEffect: VideoEffectId

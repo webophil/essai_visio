@@ -91,6 +91,30 @@ export function describeChatError(error: unknown): string {
   return "Le message n'a pas pu être envoyé. Réessayez dans quelques instants."
 }
 
+/**
+ * Traduit un échec d'envoi de fichier en une phrase affichable.
+ * Les causes diffèrent de celles d'un message écrit : le téléversement peut
+ * échouer avant même que la réunion n'ait vu le fichier.
+ */
+export function describeFileError(error: unknown): string {
+  const clientCode = readClientCode(error)
+
+  if (clientCode === '0101' || clientCode === '1101') {
+    return "Vous n’êtes pas autorisé à envoyer des fichiers dans cette réunion."
+  }
+  if (clientCode === '0013') {
+    return 'Trop de fichiers envoyés en peu de temps. Patientez quelques instants.'
+  }
+  if (clientCode === '0011' || clientCode === '0012' || clientCode === '0014') {
+    return "Le fichier n'est pas parti : la connexion à la réunion est interrompue. Réessayez dans un instant."
+  }
+  if (clientCode === '0004') {
+    return "Votre accès à la réunion n'est plus valide : rechargez la page pour renvoyer le fichier."
+  }
+
+  return "Le fichier n'a pas pu être envoyé. Réessayez dans quelques instants."
+}
+
 /** Traduit une erreur quelconque en message affichable et actionnable. */
 export function describeSessionError(error: unknown): SessionError {
   if (error instanceof MeetingApiError) {

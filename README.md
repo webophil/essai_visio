@@ -108,6 +108,29 @@ direct (`chatUpdate`) ;
   n'autorise pas l'écrit, le panneau le dit et la saisie reste désactivée ;
 - aucune persistance : l'application ne stocke aucun message et n'en relit aucun après la réunion.
 
+### Partage de fichier
+
+Un fichier peut être joint à la conversation, par l'organisateur comme par un invité :
+
+- la commande est un trombone dans le pied du panneau ; le fichier part par `sendFileMessage`,
+  qui le téléverse vers l'URL présignée de la réunion puis annonce un message de type `file`
+  (nom, taille, lien) ;
+- l'application **ne lit pas le contenu et ne le stocke pas** : elle n'affiche qu'un lien de
+  téléchargement, valable pour les participants de la réunion. Rien n'est servi par notre serveur,
+  et aucune base ni aucun compartiment de fichiers n'intervient ;
+- le fichier vit avec la réunion chez la plateforme temps réel, qui applique sa propre durée de
+  conservation : PhilDEV n'en garde aucune copie après la réunion ;
+- l'envoi de fichiers a sa **propre autorisation** dans le preset du participant
+  (`permissions.chatPublic.files`) : si elle est absente, le trombone reste visible mais désactivé,
+  avec une infobulle qui l'explique — un participant peut donc écrire sans pouvoir joindre ;
+- garde locale de 25 Mo par fichier (`MAX_CHAT_FILE_BYTES`) : au-delà, le fichier est refusé avant
+  tout téléversement, plutôt que d'échouer en cours de route ; un fichier vide est également refusé ;
+- la plateforme limite `sendFileMessage` à 20 envois par minute et par participant ; le panneau
+  traduit ce refus en français, sans afficher le message brut du SDK.
+
+Le rendu d'une bulle de fichier (nom, taille lisible, lien) et la désactivation de la commande
+sont vérifiés par `npm run test:smoke` (groupe « panneau de chat »).
+
 ## Mise en page de la salle
 
 La scène vidéo et le panneau latéral sont **indépendants en taille** :
