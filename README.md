@@ -108,48 +108,6 @@ direct (`chatUpdate`) ;
   n'autorise pas l'écrit, le panneau le dit et la saisie reste désactivée ;
 - aucune persistance : l'application ne stocke aucun message et n'en relit aucun après la réunion.
 
-### Partage de fichier
-
-Un fichier peut être joint à la conversation, par l'organisateur comme par un invité :
-
-- la commande est un trombone dans le pied du panneau ; le fichier part par `sendFileMessage`,
-  qui le téléverse vers l'URL présignée de la réunion puis annonce un message de type `file`
-  (nom, taille, lien) ;
-- l'application **ne lit pas le contenu et ne le stocke pas** : elle n'affiche qu'un lien de
-  téléchargement, valable pour les participants de la réunion. Rien n'est servi par notre serveur,
-  et aucune base ni aucun compartiment de fichiers n'intervient ;
-- le fichier vit avec la réunion chez la plateforme temps réel, qui applique sa propre durée de
-  conservation : PhilDEV n'en garde aucune copie après la réunion ;
-- l'envoi de fichiers a sa **propre autorisation** dans le preset du participant
-  (`permissions.chatPublic.files`) : si elle est absente, le trombone reste visible mais désactivé,
-  avec une infobulle qui l'explique — un participant peut donc écrire sans pouvoir joindre ;
-- garde locale de 25 Mo par fichier (`MAX_CHAT_FILE_BYTES`) : au-delà, le fichier est refusé avant
-  tout téléversement, plutôt que d'échouer en cours de route ; un fichier vide est également refusé ;
-- la plateforme limite `sendFileMessage` à 20 envois par minute et par participant ; le panneau
-  traduit ce refus en français, sans afficher le message brut du SDK.
-
-Le rendu d'une bulle de fichier (nom, taille lisible, lien) et la désactivation de la commande
-sont vérifiés par `npm run test:smoke` (groupe « panneau de chat »).
-
-### Limite connue au 3 novembre 2026 — dépôt refusé par le stockage
-
-Un envoi réel échoue à la troisième étape. Constaté sur la production, en observant le réseau :
-
-1. `POST /v2/meetings/chat-upload` → **200** : la plateforme délivre bien une URL présignée ;
-2. préflight `OPTIONS` vers le stockage → **204** : la politique CORS du compartiment accepte notre
-   origine ;
-3. `PUT` vers `rtk-chat-uploads` → refusé, et le SDK le résume en `0500 « Internal exception »`.
-
-La cause est dans l'URL signée elle-même : elle porte `x-amz-checksum-crc32=AAAAAA%3D%3D`, soit
-l'empreinte CRC32 d'un corps **vide** (quatre octets nuls), alors que le navigateur envoie le
-fichier réel. R2 compare le corps à cette empreinte déclarée et rejette le dépôt. L'URL étant
-signée (AWS4-HMAC-SHA256), la réécrire côté client invaliderait la signature : il n'existe aucun
-contournement dans notre code, seule la génération de l'URL côté plateforme est en cause.
-
-Conséquence assumée : le trombone reste affiché, l'échec est expliqué en français (« envoi refusé
-par le service de la réunion »), et la fonctionnalité redeviendra opérationnelle sans modification
-de notre côté dès que l'empreinte signée correspondra au corps réellement envoyé.
-
 ## Mise en page de la salle
 
 La scène vidéo et le panneau latéral sont **indépendants en taille** :

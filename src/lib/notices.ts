@@ -25,8 +25,6 @@ export const NOTICES = {
 
   /** Chat */
   chat: "Les messages ne sont pas conservés après la réunion.",
-  chatFiles:
-    "Les fichiers partagés ici ne sont enregistrés ni par PhilDEV ni sur son serveur : ils voyagent avec la réunion et son lien de téléchargement ne vaut que pour ses participants.",
   chatUnavailable:
     "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
 

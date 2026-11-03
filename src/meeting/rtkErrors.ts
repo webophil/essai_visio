@@ -24,7 +24,6 @@ const CLIENT_ERROR_CODES: Record<string, Description> = {
   '0013': { message: 'Trop de tentatives en peu de temps. Patientez quelques instants avant de réessayer.', canRetry: true },
   '0014': { message: "La connexion audio/vidéo n'a pas pu s'établir. Un pare-feu ou un réseau d'entreprise peut bloquer les flux : essayez un autre réseau.", canRetry: true },
   '0101': { message: "Votre rôle dans cette réunion ne permet pas cette action.", canRetry: false },
-  '0500': { message: "Le service de la réunion a refusé le dernier envoi de fichier. Réessayez plus tard ; les messages écrits restent disponibles.", canRetry: true },
   '0904': { message: "Le profil de participant configuré pour cette réunion est introuvable.", canRetry: false },
   '1101': { message: "Cette action n'est pas autorisée par votre profil de participant.", canRetry: false },
   '1601': { message: "Aucun microphone exploitable n'a été trouvé.", canRetry: false },
@@ -92,36 +91,6 @@ export function describeChatError(error: unknown): string {
   return "Le message n'a pas pu être envoyé. Réessayez dans quelques instants."
 }
 
-/**
- * Traduit un échec d'envoi de fichier en une phrase affichable.
- * Les causes diffèrent de celles d'un message écrit : le téléversement peut
- * échouer avant même que la réunion n'ait vu le fichier.
- */
-export function describeFileError(error: unknown): string {
-  const clientCode = readClientCode(error)
-
-  if (clientCode === '0101' || clientCode === '1101') {
-    return "Vous n’êtes pas autorisé à envoyer des fichiers dans cette réunion."
-  }
-  if (clientCode === '0013') {
-    return 'Trop de fichiers envoyés en peu de temps. Patientez quelques instants.'
-  }
-  if (clientCode === '0011' || clientCode === '0012' || clientCode === '0014') {
-    return "Le fichier n'est pas parti : la connexion à la réunion est interrompue. Réessayez dans un instant."
-  }
-  if (clientCode === '0004') {
-    return "Votre accès à la réunion n'est plus valide : rechargez la page pour renvoyer le fichier."
-  }
-  if (clientCode === '0500') {
-    // Le SDK regroupe sous ce code l'échec des trois étapes (adresse de
-    // téléversement, dépôt du fichier, annonce du message) : la cause exacte
-    // n'est pas transmissible, seul un message actionnable l'est.
-    return "L'envoi du fichier a été refusé par le service de la réunion. Réessayez plus tard ; les messages écrits, eux, fonctionnent."
-  }
-
-  return "Le fichier n'a pas pu être envoyé. Réessayez dans quelques instants."
-}
-
 /** Traduit une erreur quelconque en message affichable et actionnable. */
 export function describeSessionError(error: unknown): SessionError {
   if (error instanceof MeetingApiError) {
@@ -136,16 +105,6 @@ export function describeSessionError(error: unknown): SessionError {
   const clientCode = readClientCode(error)
   if (clientCode && CLIENT_ERROR_CODES[clientCode]) {
     return { code: clientCode, message: CLIENT_ERROR_CODES[clientCode].message, canRetry: CLIENT_ERROR_CODES[clientCode].canRetry }
-  }
-
-  // Code du SDK sans traduction connue : le message brut est en anglais et
-  // technique (« Internal exception »). On garde le code, jamais le texte.
-  if (clientCode) {
-    return {
-      code: clientCode,
-      message: `La réunion a renvoyé une erreur inattendue (code ${clientCode}). Rechargez la page, puis réessayez.`,
-      canRetry: true,
-    }
   }
 
   const domDescription = describeDomException(error)

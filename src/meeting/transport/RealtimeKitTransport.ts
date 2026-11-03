@@ -12,11 +12,10 @@ import type {
 } from '../../types/meeting'
 import { applyVideoEffect } from '../../media/backgroundBlur'
 import type { VideoEffectId } from '../../types/meeting'
-import { formatFileSize } from '../../lib/format'
 import { getOrCreateGuestId } from '../hostSession'
 import { MeetingApiError, requestParticipantToken } from '../rtkApi'
 import type { ParticipantRole } from '../rtkApi'
-import { describeChatError, describeFileError, describeSessionError } from '../rtkErrors'
+import { describeChatError, describeSessionError } from '../rtkErrors'
 import type { MeetingTransport, MeetingTransportOptions } from './types'
 
 /** Capacité annoncée tant que le serveur ne l'a pas confirmée. */
@@ -39,10 +38,6 @@ interface ChatMessageLike {
   userId: string
   displayName?: string
   message?: string
-  /** Métadonnées d'un message de type `file`. */
-  name?: string
-  size?: number
-  link?: string
   time?: Date
   timeMs?: number
   targetUserIds?: string[]
@@ -162,50 +157,6 @@ export class RealtimeKitTransport implements MeetingTransport {
       return true
     } catch (error) {
       this.setChat({ sending: false, error: describeChatError(error) })
-      return false
-    }
-  }
-
-  /**
-   * Partage un fichier dans la salle.
-   *
-   * Le fichier passe par la messagerie natives de RealtimeKit : l'application
-   * ne le lit pas, ne le conserve pas et ne le sert pas elle-même. Le message
-   * reçu porte un lien de téléchargement que seuls les participants peuvent
-   * utiliser.
-   */
-  async sendChatFile(file: File): Promise<boolean> {
-    const client = this.client
-    if (!client) return false
-
-    if (!this.chat.available || !this.chat.canSendFiles) {
-      this.setChat({
-        fileError: "L'envoi de fichiers n'est pas autorisé dans cette réunion.",
-      })
-      return false
-    }
-
-    if (file.size === 0) {
-      this.setChat({ fileError: 'Ce fichier est vide : il n’y a rien à envoyer.' })
-      return false
-    }
-
-    if (file.size > this.chat.maxFileBytes) {
-      this.setChat({
-        fileError: `Ce fichier dépasse ${formatFileSize(this.chat.maxFileBytes)} : choisissez un fichier plus léger.`,
-      })
-      return false
-    }
-
-    this.setChat({ sendingFile: true, fileError: null })
-
-    try {
-      await client.chat.sendFileMessage(file)
-      this.refreshChat(client)
-      this.setChat({ sendingFile: false })
-      return true
-    } catch (error) {
-      this.setChat({ sendingFile: false, fileError: describeFileError(error) })
       return false
     }
   }
@@ -602,7 +553,7 @@ function readMaxTextLength(client: RTKClient): number {
  */
 function readChatPermissions(
   client: RTKClient,
-): Pick<ChatState, 'available' | 'canSend' | 'canSendFiles' | 'unavailableReason'> {
+): Pick<ChatState, 'available' | 'canSend' | 'unavailableReason'> {
   try {
     const chat = client.self.permissions?.chatPublic
 
@@ -610,7 +561,6 @@ function readChatPermissions(
       return {
         available: false,
         canSend: false,
-        canSendFiles: false,
         unavailableReason: "La messagerie n’est pas disponible pour le moment.",
       }
     }
@@ -619,7 +569,6 @@ function readChatPermissions(
       return {
         available: false,
         canSend: false,
-        canSendFiles: false,
         unavailableReason:
           "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
       }
@@ -628,9 +577,6 @@ function readChatPermissions(
     return {
       available: true,
       canSend: chat.canSend,
-      // Les fichiers ont leur propre autorisation dans le profil : elle peut
-      // être refusée alors même que les messages écrits sont permis.
-      canSendFiles: Boolean(chat.canSend) && Boolean(chat.files),
       unavailableReason: chat.canSend
         ? null
         : "Vous pouvez lire les messages, mais l’envoi n’est pas autorisé dans cette réunion.",
@@ -639,7 +585,6 @@ function readChatPermissions(
     return {
       available: false,
       canSend: false,
-      canSendFiles: false,
       unavailableReason: "La messagerie n’est pas disponible pour le moment.",
     }
   }
@@ -652,44 +597,24 @@ function messageTime(message: ChatMessageLike): number {
   return Date.now()
 }
 
-/**
- * Traduit un message du SDK en vue affichable.
- * `null` pour ce qui n'a rien à montrer ici : message adressé à certains
- * participants, texte vide, ou fichier sans lien exploitable.
- */
+/** Traduit un message du SDK en vue affichable, ou `null` s'il n'est pas textuel. */
 function toChatView(message: ChatMessageLike, selfUserId: string): ChatMessageView | null {
-  // Message adressé à certains participants : il n'apparaît pas dans le canal
-  // public du panneau.
-  if (Array.isArray(message.targetUserIds) && message.targetUserIds.length > 0) return null
-
-  const base = {
-    id: message.id,
-    authorName: message.displayName?.trim() || 'Participant',
-    isLocal: message.userId === selfUserId,
-    sentAt: messageTime(message),
-  }
-
-  if (message.type === 'file') {
-    const url = (message.link ?? '').trim()
-    if (url.length === 0) return null
-
-    return {
-      ...base,
-      kind: 'file',
-      file: {
-        name: message.name?.trim() || 'Fichier',
-        bytes: typeof message.size === 'number' && message.size > 0 ? message.size : 0,
-        url,
-      },
-    }
-  }
-
   if (message.type !== 'text') return null
 
   const text = (message.message ?? '').trim()
   if (text.length === 0) return null
 
-  return { ...base, kind: 'text', text }
+  // Message adressé à certains participants : il n'apparaît pas dans le canal
+  // public du panneau.
+  if (Array.isArray(message.targetUserIds) && message.targetUserIds.length > 0) return null
+
+  return {
+    id: message.id,
+    authorName: message.displayName?.trim() || 'Participant',
+    isLocal: message.userId === selfUserId,
+    sentAt: messageTime(message),
+    text,
+  }
 }
 
 /** Fusion sans doublon (les messages peuvent arriver par l'historique et par événement). */
