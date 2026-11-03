@@ -31,6 +31,7 @@
  */
 
 import { HOST_SESSION_TTL_MS, createHostSession, hasHostSecret, verifyHostKey, verifyHostSession } from './hostAuth.js'
+import { MailError, buildInvitation, hasMailer, sendMail } from './mailer.js'
 import { clientKey, createRateLimiter } from './rateLimit.js'
 import { applySecurityHeaders } from './securityHeaders.js'
 import {
@@ -111,11 +112,23 @@ const MAX_TITLE_LENGTH = 80
 const DEFAULT_MEETING_TITLE = 'Réunion PhilDEV'
 const MAX_BODY_BYTES = 4096
 
+/** Six adresses au maximum par envoi : quatre invités, l'organisateur, une marge. */
+const MAX_INVITATION_RECIPIENTS = 6
+/** Rendez-vous accepté : jusqu'à une heure de retard, et un an d'avance. */
+const APPOINTMENT_PAST_TOLERANCE_MS = 60 * 60_000
+const APPOINTMENT_HORIZON_MS = 365 * 24 * 60 * 60_000
+/** Contrôle de forme d'une adresse, volontairement simple. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
+/** Identifiant lisible d'un rendez-vous, tel qu'il apparaît dans le lien. */
+const MEETING_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?$/
+
 /** Limites par adresse cliente : freinent l'abus sans stockage partagé. */
 const hostLoginLimiter = createRateLimiter({ limit: 6, windowMs: 5 * 60_000 })
 const meetingCreationLimiter = createRateLimiter({ limit: 10, windowMs: 5 * 60_000 })
 const tokenLimiter = createRateLimiter({ limit: 15, windowMs: 5 * 60_000 })
 const meetingInfoLimiter = createRateLimiter({ limit: 30, windowMs: 5 * 60_000 })
+/** Un envoi d'invitations groupe plusieurs messages : plafond volontairement serré. */
+const invitationLimiter = createRateLimiter({ limit: 6, windowMs: 10 * 60_000 })
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -202,6 +215,34 @@ function normalizeTitle(value, fallback) {
   if (typeof value !== 'string') return fallback
   const title = value.trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE_LENGTH)
   return title.length > 0 ? title : fallback
+}
+
+/** Adresse e-mail normalisée, ou `null` si elle n'a pas la forme attendue. */
+function normalizeEmail(value) {
+  if (typeof value !== 'string') return null
+  const email = value.trim().toLowerCase()
+  return email.length <= 254 && EMAIL_PATTERN.test(email) ? email : null
+}
+
+/**
+ * Date de rendez-vous : ISO 8601 reçu du navigateur (donc en UTC), bornée à un
+ * passé proche et à un an d'avance pour éviter les dates aberrantes.
+ */
+function normalizeStartsAt(value, now = Date.now()) {
+  if (typeof value !== 'string') return null
+
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return null
+  if (timestamp < now - APPOINTMENT_PAST_TOLERANCE_MS) return null
+  if (timestamp > now + APPOINTMENT_HORIZON_MS) return null
+
+  return new Date(timestamp).toISOString()
+}
+
+/** Identifiant lisible d'un rendez-vous, normalisé en minuscules. */
+function normalizeMeetingId(value) {
+  const id = String(value ?? '').trim().toLowerCase()
+  return MEETING_ID_PATTERN.test(id) ? id : null
 }
 
 /** Limite de débit : renvoie une réponse de refus, ou `null` si la demande passe. */
@@ -368,6 +409,123 @@ async function handleParticipantToken(request, env) {
 }
 
 /**
+ * `POST /api/meetings/:id/invitations` — envoie le lien du rendez-vous par
+ * e-mail, à chaque invité puis à l'organisateur.
+ *
+ * Réservé à l'organisateur : le message part d'un domaine qui nous appartient,
+ * il ne doit donc pas pouvoir servir de relais d'envoi. Le sujet et le corps
+ * sont rédigés **côté serveur**, à partir du nom réel de la réunion relu chez
+ * RealtimeKit : le navigateur ne fournit que des adresses et une date.
+ *
+ * Un message par destinataire : les invités ne voient pas les adresses des
+ * autres, et un refus isolé n'annule pas les envois déjà faits.
+ */
+async function handleMeetingInvitations(request, env, rawMeetingId) {
+  if (!(await isHostRequest(request, env))) {
+    return failure(401, 'host-unauthorized', "Seul l'organisateur authentifié peut envoyer des invitations.")
+  }
+
+  if (!hasMailer(env)) {
+    return failure(
+      503,
+      'mail-not-configured',
+      "L'envoi d'invitations n'est pas encore configuré : le secret RESEND_API_KEY doit être enregistré dans FreeBuff Sites (onglet Secrets), et le domaine d'envoi vérifié chez le fournisseur d'e-mail.",
+    )
+  }
+
+  const limited = enforceRateLimit(request, invitationLimiter, 'meeting-invite')
+  if (limited) return limited
+
+  const meetingId = normalizeMeetingId(rawMeetingId)
+  if (!meetingId) {
+    return failure(400, 'meeting-invalid', "L'identifiant du rendez-vous est invalide.")
+  }
+
+  const body = await readJsonBody(request)
+  if (!body) return failure(400, 'body-invalid', 'Requête illisible.')
+
+  const realtimeKitId = typeof body.realtimeKitId === 'string' ? body.realtimeKitId.trim() : ''
+  if (!isUuid(realtimeKitId)) {
+    return failure(400, 'meeting-invalid', "L'identifiant de réunion Cloudflare est absent ou invalide.")
+  }
+
+  const startsAt = normalizeStartsAt(body.startsAt)
+  if (!startsAt) {
+    return failure(
+      400,
+      'appointment-invalid',
+      "Indiquez une date et une heure de rendez-vous valides, dans l'année à venir.",
+    )
+  }
+
+  const guests = Array.isArray(body.guests)
+    ? [...new Set(body.guests.map(normalizeEmail).filter(Boolean))]
+    : []
+  const hostEmail = normalizeEmail(body.hostEmail)
+
+  if (guests.length === 0) {
+    return failure(400, 'recipients-invalid', 'Indiquez au moins une adresse e-mail de participant.')
+  }
+  if (!hostEmail) {
+    return failure(400, 'recipients-invalid', "Indiquez votre adresse e-mail pour recevoir le rappel du lien.")
+  }
+
+  const recipients = [...new Set([...guests, hostEmail])]
+  if (recipients.length > MAX_INVITATION_RECIPIENTS) {
+    return failure(
+      400,
+      'recipients-invalid',
+      `Proposez au maximum ${MAX_INVITATION_RECIPIENTS} adresses par envoi.`,
+    )
+  }
+
+  // Le nom de la réunion vient de RealtimeKit, jamais du navigateur : le
+  // message ne peut pas être détourné en texte libre.
+  let title = DEFAULT_MEETING_TITLE
+  try {
+    const meeting = await getMeeting(env, realtimeKitId)
+    if (meeting) title = normalizeTitle(meeting.title, DEFAULT_MEETING_TITLE)
+  } catch (error) {
+    return realtimeKitFailure(error)
+  }
+
+  const origin = new URL(request.url).origin
+  // Même forme que le lien affiché par l'application (`/rdv-…?r=…`).
+  const link = `${origin}/rdv-${meetingId}?r=${encodeURIComponent(realtimeKitId)}`
+
+  let sent = 0
+  const failed = []
+
+  for (const address of recipients) {
+    const content = buildInvitation({
+      title,
+      startsAt,
+      link,
+      maxParticipants: MAX_PARTICIPANTS,
+      isHost: address === hostEmail,
+    })
+
+    try {
+      await sendMail(env, { to: address, ...content })
+      sent += 1
+    } catch (error) {
+      reportFailure('mail', error)
+      failed.push({ email: address, code: error instanceof MailError ? error.code : 'mail-failed' })
+    }
+  }
+
+  if (sent === 0) {
+    return failure(
+      502,
+      'mail-failed',
+      "Aucune invitation n'a pu être envoyée. Vérifiez que le domaine d'envoi est vérifié chez le fournisseur d'e-mail, puis réessayez.",
+    )
+  }
+
+  return json({ sent, failed })
+}
+
+/**
  * `GET /api/meetings/:id` — nom de la réunion, lisible par ses participants.
  *
  * Le nom saisi par l'organisateur est stocké dans le **titre de la réunion
@@ -480,6 +638,10 @@ async function routeApi(request, url, env) {
   const meetingInfoMatch = path.match(/^\/api\/meetings\/([^/]+)$/)
   if (meetingInfoMatch && (request.method === 'GET' || request.method === 'HEAD')) {
     return handleMeetingInfo(request, env, meetingInfoMatch[1])
+  }
+  const invitationMatch = path.match(/^\/api\/meetings\/([^/]+)\/invitations$/)
+  if (invitationMatch && request.method === 'POST') {
+    return handleMeetingInvitations(request, env, invitationMatch[1])
   }
   if (path === '/api/rtk/token' && request.method === 'POST') {
     return handleParticipantToken(request, env)

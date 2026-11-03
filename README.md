@@ -45,6 +45,7 @@ Navigateur ──► Worker FreeBuff (/api/...)  ──► API Cloudflare Realti
 | `worker/index.js` | Routeur : API (`/api/...`) puis service des assets avec repli SPA |
 | `worker/realtimekit.js` | Client REST RealtimeKit (création de réunion, participants, presets) |
 | `worker/hostAuth.js` | Session organisateur signée (HMAC-SHA-256), sans base de données |
+| `worker/mailer.js` | Invitations par e-mail : un message par destinataire, contenu rédigé côté serveur |
 | `worker/rateLimit.js` | Limitation de débit en mémoire (fenêtre glissante) |
 | `src/meeting/transport/RealtimeKitTransport.ts` | Seule frontière avec le SDK côté navigateur |
 | `src/media/useRtkMedia.ts` | Capture des périphériques par le SDK (écran de préparation) |
@@ -56,6 +57,7 @@ Navigateur ──► Worker FreeBuff (/api/...)  ──► API Cloudflare Realti
 | `src/meeting/rtkApi.ts` | Appels typés à l'API du Worker |
 | `src/meeting/hostSession.ts` | Session organisateur et identifiant d'invité, côté navigateur |
 | `src/meeting/useCreateMeeting.ts` | Création d'une réunion puis ouverture de la salle |
+| `src/components/meeting/InviteByEmailPanel.tsx` | Envoi du lien et de l'heure du rendez-vous par e-mail (organisateur) |
 
 Le SDK est la **source de vérité** des états audio/vidéo : les composants consomment
 l'instantané produit par le transport (`MeetingSessionState`), jamais une intention locale. Aucune
@@ -214,9 +216,16 @@ Les fichiers du moteur ne sont pas versionnés (`public/vendor/` est ignoré) :
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | **secret** (FreeBuff Sites) | Jeton d'API Cloudflare à portée « Realtime Admin ». Utilisé uniquement par le Worker. |
 | `PHILDEV_HOST_KEY` | **secret** (FreeBuff Sites) | Clé organisateur, à définir par PhilDEV. Comparée à temps constant ; sert à signer la session. |
+| `RESEND_API_KEY` | **secret** (FreeBuff Sites) | Clé d'API du fournisseur d'e-mail (Resend). Utilisée uniquement par le Worker, jamais renvoyée au navigateur. |
 
 Sans `PHILDEV_HOST_KEY`, l'accès organisateur répond `503 host-key-missing` : la création de
 réunion et le rôle d'hôte restent fermés, les invités ne sont pas affectés.
+
+Sans `RESEND_API_KEY`, l'envoi d'invitations répond `503 mail-not-configured` : la réunion et la
+salle restent utilisables, seul l'envoi d'e-mails est désactivé. Le domaine `phildev.online` doit
+en plus être **vérifié** chez le fournisseur (enregistrements DNS) avant le premier envoi.
+L'expéditeur par défaut est `PhilDEV Visio <invitation@phildev.online>` ; `MAIL_FROM` le surcharge
+(aucun secret n'est nécessaire pour cette variable, qui n'est qu'une adresse).
 
 L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application RealtimeKit
 (`09fe762d-4e8d-45c7-9129-a466ae061711`) sont des valeurs **non secrètes**, déclarées dans
@@ -236,6 +245,7 @@ L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application Re
 | `GET` | `/api/version` | public | Version applicative et commit Git réellement déployés |
 | `POST` | `/api/host/session` | clé organisateur | Échange la clé contre une session signée (30 jours) |
 | `POST` | `/api/meetings` | **session hôte** | Crée une réunion et réserve l'emplacement de l'organisateur |
+| `POST` | `/api/meetings/:id/invitations` | **session hôte** | Envoie le lien et l'heure du rendez-vous par e-mail (invités puis organisateur) |
 | `GET` | `/api/meetings/:id` | public | Nom de la réunion (identifiant et titre uniquement) |
 | `POST` | `/api/rtk/token` | public (invité) / session (hôte) | Délivre un jeton de participation |
 | `GET` | `/api/rtk/diagnostic` | **session hôte** | État en lecture seule (presets, configuration) — aucun secret |
@@ -267,6 +277,30 @@ navigateur ne conserve que cette session, révocable depuis la boîte de dialogu
 organisateur ». Les invariants vérifiés par les tests : création de réunion et attribution du
 preset `group_call_host` impossibles sans session valide, et jeton d'API absent de toutes les
 réponses.
+
+## Invitations par e-mail
+
+Depuis l'écran d'accès (`/rdv-…?r=…`), l'organisateur ouvre « Inviter par e-mail », saisit les
+adresses, la date et l'heure du rendez-vous, puis envoie. Chaque adresse — la sienne comprise —
+reçoit le nom de la réunion, l'heure en clair (heure de Paris), le lien complet et le rappel
+qu'aucun compte n'est nécessaire. Il peut ensuite **fermer la page** : la réunion RealtimeKit
+existe déjà, rien ne dépend de l'onglet resté ouvert.
+
+Trois choix tenus côté Worker :
+
+- **un message par destinataire** — les invités ne voient pas les adresses des autres, et un refus
+  isolé n'annule pas les envois déjà faits ; la réponse indique le nombre parti et les adresses en
+  échec, jamais le corps d'erreur du fournisseur ;
+- **contenu rédigé côté serveur** — sujet et corps sont construits à partir du titre RealtimeKit de
+  la réunion, jamais d'un texte venu du navigateur : le domaine d'envoi ne peut pas servir de
+  relais. L'endpoint exige la session hôte et applique sa propre limite de débit (six envois par
+  quart d'heure et par adresse cliente) ;
+- **rien n'est persisté** — ni la liste des invités, ni l'heure du rendez-vous. Elle vit dans le
+  message envoyé, ce qui évite une base de données pour une information qui n'a pas à être relue.
+
+Limites assumées : six adresses au maximum par envoi, et l'heure du rendez-vous **n'apparaît pas
+sur la page** — elle est dans l'e-mail. L'afficher dans la salle demanderait une persistance que
+le projet n'a pas.
 
 ## Démarrage
 
@@ -343,7 +377,7 @@ Deux fichiers versionnés suffisent à reproduire un déploiement :
 
 | Fichier | Rôle |
 | --- | --- |
-| `preview.manifest.json` | Manifeste : `entrypoint`, `modules` (6 fichiers du Worker, dont `version.js`), `assetsDirectory` |
+| `preview.manifest.json` | Manifeste : `entrypoint`, `modules` (7 fichiers du Worker, dont `version.js`), `assetsDirectory` |
 | `worker/*.js` | Worker : API RealtimeKit puis service des assets |
 
 `dist/` n'est pas versionné : il est reconstruit par `npm run build` avant tout déploiement.

@@ -5,6 +5,7 @@
     { "name": "index.js", "type": "esm", "path": "./worker/index.js" },
     { "name": "realtimekit.js", "type": "esm", "path": "./worker/realtimekit.js" },
     { "name": "hostAuth.js", "type": "esm", "path": "./worker/hostAuth.js" },
+    { "name": "mailer.js", "type": "esm", "path": "./worker/mailer.js" },
     { "name": "rateLimit.js", "type": "esm", "path": "./worker/rateLimit.js" },
     { "name": "securityHeaders.js", "type": "esm", "path": "./worker/securityHeaders.js" },
     { "name": "version.js", "type": "esm", "path": "./worker/version.js" }

@@ -19,6 +19,7 @@ import { Notice } from '../ui/Notice'
 import { SelectField } from '../ui/SelectField'
 import { StatusPill } from '../ui/StatusPill'
 import { TextField } from '../ui/TextField'
+import { InviteByEmailPanel } from '../meeting/InviteByEmailPanel'
 import { VideoPlaceholder, VideoSurface } from '../meeting/VideoSurface'
 import { useMeeting } from '../../state/meetingContext'
 import { NOTICES } from '../../lib/notices'
@@ -36,6 +37,8 @@ export interface PreJoinScreenProps {
 export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
   const {
     meetingName,
+    meetingId,
+    realtimeKitId,
     participantName,
     setParticipantName,
     media,
@@ -311,6 +314,14 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
                 {permissionMessage} Utilisez l&apos;icône de cadenas dans la barre d&apos;adresse
                 pour autoriser la caméra et le microphone, puis réessayez.
               </Notice>
+            ) : null}
+
+            {isHost && realtimeKitId ? (
+              <InviteByEmailPanel
+                meetingId={meetingId}
+                realtimeKitId={realtimeKitId}
+                meetingName={meetingName}
+              />
             ) : null}
 
             <div className="mt-auto flex flex-col gap-3 border-t border-ink-700 pt-4">

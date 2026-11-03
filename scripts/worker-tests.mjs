@@ -17,6 +17,7 @@ import worker from '../worker/index.js'
 
 const API_TOKEN = 'jeton-api-cloudflare-DE-TEST'
 const HOST_KEY = 'cle-organisateur-DE-TEST'
+const MAIL_KEY = 'cle-envoi-DE-TEST'
 const INDEX_HTML = '<!doctype html><html lang="fr"><body><div id="root"></div></body></html>'
 
 let failures = 0
@@ -63,6 +64,10 @@ const rtkMeetings = new Map()
 /** Titre de réunion, tel que stocké par Cloudflare RealtimeKit. */
 const rtkTitles = new Map()
 const rtkCalls = []
+/** Messages acceptés par le fournisseur d'e-mail simulé (aucun envoi réel). */
+const mailSends = []
+/** Force un refus du fournisseur, pour vérifier le traitement d'échec. */
+let mailFailure = false
 
 function seedMeeting() {
   const id = crypto.randomUUID()
@@ -148,12 +153,22 @@ globalThis.fetch = async (input, init = {}) => {
     )
   }
 
+  // Fournisseur d'e-mail : son API est interceptée comme le reste du réseau.
+  if (url.host === 'api.resend.com' && method === 'POST') {
+    if (mailFailure) {
+      return new Response(JSON.stringify({ name: 'validation_error' }), { status: 422 })
+    }
+    mailSends.push({ to: body.to?.[0], subject: body.subject, from: body.from, text: body.text })
+    return new Response(JSON.stringify({ id: `message-${mailSends.length}` }), { status: 200 })
+  }
+
   return new Response(JSON.stringify({ success: false, errors: [{ code: 9999 }] }), { status: 404 })
 }
 
 const baseEnv = {
   CLOUDFLARE_API_TOKEN: API_TOKEN,
   PHILDEV_HOST_KEY: HOST_KEY,
+  RESEND_API_KEY: MAIL_KEY,
   ASSETS: { fetch: assetsFetch },
 }
 
@@ -174,6 +189,7 @@ async function readJson(response, label) {
   const text = await response.text()
   assert.ok(!text.includes(API_TOKEN), `${label} : le jeton d'API apparaît dans la réponse`)
   assert.ok(!text.includes(HOST_KEY), `${label} : la clé organisateur apparaît dans la réponse`)
+  assert.ok(!text.includes(MAIL_KEY), `${label} : la clé d'envoi d'e-mails apparaît dans la réponse`)
 
   try {
     return JSON.parse(text)
@@ -594,6 +610,136 @@ await testAsync('le diagnostic exige la session et ne renvoie aucun secret', asy
   assert.equal(report.apiTokenPresent, true)
   assert.equal(report.presetsRead, 'ok')
   assert.deepEqual(report.presetsAvailable, ['group_call_host', 'group_call_participant'])
+})
+
+group('Invitations par e-mail')
+
+/** Corps d'invitation valide, avec surcharges explicites. */
+function invitationBody(realtimeKitId, overrides = {}) {
+  return {
+    realtimeKitId,
+    startsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    guests: ['aurore@exemple.fr'],
+    hostEmail: 'organisateur@exemple.fr',
+    ...overrides,
+  }
+}
+
+await testAsync('sans session organisateur, aucune invitation ne part', async () => {
+  const realtimeKitId = seedMeeting()
+  const response = await appRequest('/api/meetings/rdv-test/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.3.0.1' },
+    body: invitationBody(realtimeKitId),
+  })
+
+  assert.equal(response.status, 401)
+  assert.equal((await response.json()).error, 'host-unauthorized')
+})
+
+await testAsync('sans secret d’envoi, l’invitation est refusée proprement', async () => {
+  const token = await login('10.3.0.2')
+  const realtimeKitId = seedMeeting()
+  const response = await appRequest('/api/meetings/rdv-test/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.3.0.2' },
+    body: invitationBody(realtimeKitId),
+    env: { CLOUDFLARE_API_TOKEN: API_TOKEN, PHILDEV_HOST_KEY: HOST_KEY, ASSETS: { fetch: assetsFetch } },
+  })
+
+  assert.equal(response.status, 503)
+  assert.equal((await response.json()).error, 'mail-not-configured')
+})
+
+await testAsync('chaque destinataire reçoit son propre message, avec lien et heure', async () => {
+  mailSends.length = 0
+  const token = await login('10.3.0.3')
+  const realtimeKitId = seedMeeting()
+  rtkTitles.set(realtimeKitId, 'Rendez-vous Aurore Studer')
+
+  const response = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.3.0.3' },
+    body: invitationBody(realtimeKitId, { guests: ['aurore@exemple.fr', 'stagiaire@exemple.fr'] }),
+  })
+
+  assert.equal(response.status, 200)
+  const report = await readJson(response, 'invitations')
+  assert.equal(report.sent, 3, 'deux invités et l’organisateur')
+  assert.deepEqual(report.failed, [])
+  assert.equal(mailSends.length, 3, 'un message par destinataire')
+
+  const guest = mailSends.find((mail) => mail.to === 'aurore@exemple.fr')
+  assert.ok(guest, 'message de l’invité absent')
+  assert.ok(
+    guest.text.includes(`https://visio.phildev.test/rdv-aurore?r=${realtimeKitId}`),
+    'lien d’invitation absent du message',
+  )
+  assert.ok(guest.text.includes('Rendez-vous Aurore Studer'), 'nom réel de la réunion attendu')
+  assert.match(guest.text, /Rendez-vous : .+heure de Paris/, 'heure du rendez-vous absente')
+  assert.ok(!guest.subject.startsWith('Rappel'), 'sujet invité sans préfixe de rappel')
+
+  const host = mailSends.find((mail) => mail.to === 'organisateur@exemple.fr')
+  assert.ok(host, 'rappel à l’organisateur absent')
+  assert.ok(host.subject.startsWith('Rappel'), 'sujet de rappel attendu pour l’organisateur')
+})
+
+await testAsync('adresses, date et réunion sont validées avant tout envoi', async () => {
+  mailSends.length = 0
+  const token = await login('10.3.0.4')
+  const realtimeKitId = seedMeeting()
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-PhilDEV-Host': token,
+    'CF-Connecting-IP': '10.3.0.4',
+  }
+
+  const badGuest = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers,
+    body: invitationBody(realtimeKitId, { guests: ['pas-une-adresse'] }),
+  })
+  assert.equal(badGuest.status, 400)
+  assert.equal((await badGuest.json()).error, 'recipients-invalid')
+
+  const badDate = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers,
+    body: invitationBody(realtimeKitId, { startsAt: 'hier' }),
+  })
+  assert.equal(badDate.status, 400)
+  assert.equal((await badDate.json()).error, 'appointment-invalid')
+
+  const badMeeting = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers,
+    body: invitationBody('pas-un-uuid'),
+  })
+  assert.equal(badMeeting.status, 400)
+  assert.equal((await badMeeting.json()).error, 'meeting-invalid')
+
+  assert.equal(mailSends.length, 0, 'aucun message ne doit partir sur une saisie refusée')
+})
+
+await testAsync('un refus du fournisseur est signalé sans relayer son détail', async () => {
+  mailFailure = true
+  try {
+    const token = await login('10.3.0.5')
+    const realtimeKitId = seedMeeting()
+    rtkTitles.set(realtimeKitId, 'Réunion Rappel')
+    const response = await appRequest('/api/meetings/aurore/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.3.0.5' },
+      body: invitationBody(realtimeKitId),
+    })
+
+    assert.equal(response.status, 502)
+    const payload = await readJson(response, 'envoi refusé')
+    assert.equal(payload.error, 'mail-failed')
+    assert.ok(!JSON.stringify(payload).includes('validation_error'), 'code amont relayé à tort')
+  } finally {
+    mailFailure = false
+  }
 })
 
 group('Limitation de débit')

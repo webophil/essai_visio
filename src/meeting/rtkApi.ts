@@ -32,6 +32,12 @@ export interface MeetingInfo {
   title: string
 }
 
+/** Bilan d'un envoi d'invitations : nombre parti, adresses refusées. */
+export interface InvitationReport {
+  sent: number
+  failed: { email: string; code: string }[]
+}
+
 export interface HostSession {
   token: string
   expiresAt: number
@@ -73,6 +79,11 @@ export class MeetingApiError extends Error {
   /** L'API n'est pas disponible (développement local sans Worker). */
   get isApiUnavailable(): boolean {
     return this.code === 'api-unavailable' || this.code === 'host-key-missing'
+  }
+
+  /** L'envoi d'e-mails n'est pas configuré côté serveur (secret absent). */
+  get needsMailSetup(): boolean {
+    return this.code === 'mail-not-configured'
   }
 }
 
@@ -201,4 +212,32 @@ export function requestParticipantToken(options: {
 /** État en lecture seule de la configuration RealtimeKit (organisateur). */
 export function fetchDiagnostic(hostToken: string): Promise<DiagnosticReport> {
   return callApi<DiagnosticReport>('/api/rtk/diagnostic', { method: 'GET', hostToken })
+}
+
+/**
+ * Envoie le lien du rendez-vous par e-mail, à chaque invité puis à
+ * l'organisateur. Seules les données partent : le message est rédigé par le
+ * Worker, avec le nom réel de la réunion.
+ */
+export function sendMeetingInvitations(options: {
+  meetingId: string
+  realtimeKitId: string
+  startsAt: string
+  guests: string[]
+  hostEmail: string
+  hostToken: string
+}): Promise<InvitationReport> {
+  return callApi<InvitationReport>(
+    `/api/meetings/${encodeURIComponent(options.meetingId)}/invitations`,
+    {
+      method: 'POST',
+      hostToken: options.hostToken,
+      body: {
+        realtimeKitId: options.realtimeKitId,
+        startsAt: options.startsAt,
+        guests: options.guests,
+        hostEmail: options.hostEmail,
+      },
+    },
+  )
 }
