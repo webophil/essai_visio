@@ -131,6 +131,25 @@ Un fichier peut être joint à la conversation, par l'organisateur comme par un 
 Le rendu d'une bulle de fichier (nom, taille lisible, lien) et la désactivation de la commande
 sont vérifiés par `npm run test:smoke` (groupe « panneau de chat »).
 
+### Limite connue au 3 novembre 2026 — dépôt refusé par le stockage
+
+Un envoi réel échoue à la troisième étape. Constaté sur la production, en observant le réseau :
+
+1. `POST /v2/meetings/chat-upload` → **200** : la plateforme délivre bien une URL présignée ;
+2. préflight `OPTIONS` vers le stockage → **204** : la politique CORS du compartiment accepte notre
+   origine ;
+3. `PUT` vers `rtk-chat-uploads` → refusé, et le SDK le résume en `0500 « Internal exception »`.
+
+La cause est dans l'URL signée elle-même : elle porte `x-amz-checksum-crc32=AAAAAA%3D%3D`, soit
+l'empreinte CRC32 d'un corps **vide** (quatre octets nuls), alors que le navigateur envoie le
+fichier réel. R2 compare le corps à cette empreinte déclarée et rejette le dépôt. L'URL étant
+signée (AWS4-HMAC-SHA256), la réécrire côté client invaliderait la signature : il n'existe aucun
+contournement dans notre code, seule la génération de l'URL côté plateforme est en cause.
+
+Conséquence assumée : le trombone reste affiché, l'échec est expliqué en français (« envoi refusé
+par le service de la réunion »), et la fonctionnalité redeviendra opérationnelle sans modification
+de notre côté dès que l'empreinte signée correspondra au corps réellement envoyé.
+
 ## Mise en page de la salle
 
 La scène vidéo et le panneau latéral sont **indépendants en taille** :

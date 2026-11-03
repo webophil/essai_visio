@@ -24,7 +24,7 @@ const CLIENT_ERROR_CODES: Record<string, Description> = {
   '0013': { message: 'Trop de tentatives en peu de temps. Patientez quelques instants avant de réessayer.', canRetry: true },
   '0014': { message: "La connexion audio/vidéo n'a pas pu s'établir. Un pare-feu ou un réseau d'entreprise peut bloquer les flux : essayez un autre réseau.", canRetry: true },
   '0101': { message: "Votre rôle dans cette réunion ne permet pas cette action.", canRetry: false },
-  '0500': { message: "La réunion n'a pas pu traiter la dernière demande (envoi de fichier). Réessayez, ou choisissez un fichier plus léger.", canRetry: true },
+  '0500': { message: "Le service de la réunion a refusé le dernier envoi de fichier. Réessayez plus tard ; les messages écrits restent disponibles.", canRetry: true },
   '0904': { message: "Le profil de participant configuré pour cette réunion est introuvable.", canRetry: false },
   '1101': { message: "Cette action n'est pas autorisée par votre profil de participant.", canRetry: false },
   '1601': { message: "Aucun microphone exploitable n'a été trouvé.", canRetry: false },
@@ -116,7 +116,7 @@ export function describeFileError(error: unknown): string {
     // Le SDK regroupe sous ce code l'échec des trois étapes (adresse de
     // téléversement, dépôt du fichier, annonce du message) : la cause exacte
     // n'est pas transmissible, seul un message actionnable l'est.
-    return "La réunion n'a pas accepté le fichier. Réessayez avec un fichier plus léger, ou prévenez l'organisateur si cela se répète."
+    return "L'envoi du fichier a été refusé par le service de la réunion. Réessayez plus tard ; les messages écrits, eux, fonctionnent."
   }
 
   return "Le fichier n'a pas pu être envoyé. Réessayez dans quelques instants."

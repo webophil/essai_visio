@@ -779,7 +779,7 @@ checks.push({
     // Le SDK regroupe sous 0500 tous les échecs d'envoi de fichier, et son
     // message est en anglais (« Internal exception ») : il n'est jamais affiché.
     expect(
-      describeFileError({ code: '0500' }).includes('fichier plus léger'),
+      describeFileError({ code: '0500' }).includes('refusé par le service de la réunion'),
       'échec de fichier (0500) expliqué et actionnable',
     )
     expect(
