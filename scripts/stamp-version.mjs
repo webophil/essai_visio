@@ -40,7 +40,12 @@ if (!commit) {
 
 // Un arbre modifié est signalé dans le commit annoncé : la version publiée ne
 // correspond alors pas exactement à un commit, et le diagnostic le montre.
-const dirty = git(['status', '--porcelain', '--', 'src', 'worker', 'index.html', 'package.json']) !== ''
+// `worker/version.js` est le fichier écrit ici : sa modification en attente
+// n'est pas une modification du code. L'ignorer évite qu'un build succédant à
+// un build se déclare « -dirty » à cause de sa propre estampille.
+const dirty = git(['status', '--porcelain', '--', 'src', 'worker', 'index.html', 'package.json'])
+  .split('\n')
+  .filter((line) => line.trim() !== '' && !line.endsWith('worker/version.js')).length > 0
 const commitDate = git(['show', '-s', '--format=%cI', 'HEAD']) || new Date().toISOString()
 
 const content = `/**
