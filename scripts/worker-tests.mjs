@@ -158,7 +158,13 @@ globalThis.fetch = async (input, init = {}) => {
     if (mailFailure) {
       return new Response(JSON.stringify({ name: 'validation_error' }), { status: 422 })
     }
-    mailSends.push({ to: body.to?.[0], subject: body.subject, from: body.from, text: body.text })
+    mailSends.push({
+      to: body.to?.[0],
+      subject: body.subject,
+      from: body.from,
+      text: body.text,
+      html: body.html,
+    })
     return new Response(JSON.stringify({ id: `message-${mailSends.length}` }), { status: 200 })
   }
 
@@ -687,6 +693,19 @@ await testAsync('chaque destinataire reçoit son propre message, avec lien et he
     'lien d’invitation absent du message',
   )
   assert.ok(guest.text.includes('Rendez-vous Aurore Studer'), 'nom réel de la réunion attendu')
+  assert.ok(
+    guest.text.includes('PhilDEV vous invite à une réunion :\n« Rendez-vous Aurore Studer »'),
+    'invitation ouverte par « PhilDEV vous invite », nom de la réunion sur sa propre ligne',
+  )
+  assert.ok(
+    guest.html.includes('PhilDEV vous invite à une réunion :') &&
+      guest.html.includes('« Rendez-vous Aurore Studer »'),
+    'même ouverture dans la version HTML',
+  )
+  assert.ok(
+    !guest.text.includes('Vous êtes invité'),
+    'ancienne formule d’invitation retirée',
+  )
   assert.match(guest.text, /Rendez-vous : .+heure de Paris/, 'heure du rendez-vous absente')
   assert.equal(guest.from, 'PhilDEV Visio <invitation@phildev.online>', 'expéditeur par défaut attendu')
   assert.ok(!guest.subject.startsWith('Rappel'), 'sujet invité sans préfixe de rappel')
@@ -694,6 +713,10 @@ await testAsync('chaque destinataire reçoit son propre message, avec lien et he
   const host = mailSends.find((mail) => mail.to === 'organisateur@exemple.fr')
   assert.ok(host, 'rappel à l’organisateur absent')
   assert.ok(host.subject.startsWith('Rappel'), 'sujet de rappel attendu pour l’organisateur')
+  assert.ok(
+    !host.text.includes('PhilDEV vous invite'),
+    'le rappel à l’organisateur garde sa propre formule',
+  )
 })
 
 await testAsync('MAIL_FROM remplace l’expéditeur par défaut', async () => {

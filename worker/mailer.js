@@ -112,9 +112,12 @@ export function buildInvitation({ title, startsAt, link, maxParticipants, isHost
   const moment = formatAppointment(startsAt)
   if (!moment) return null
 
+  // L'invitation s'ouvre sur une phrase, puis le nom de la réunion sur sa
+  // propre ligne : c'est ce que le destinataire cherche en premier.
   const intro = isHost
     ? `Voici le rappel du lien de la réunion « ${title} » que vous organisez.`
-    : `Vous êtes invité à la réunion « ${title} ».`
+    : 'PhilDEV vous invite à une réunion :'
+  const titleLine = isHost ? null : `« ${title} »`
   const subject = `${isHost ? 'Rappel — ' : ''}${title} : ${moment}`
   const closing =
     "Aucun compte n'est nécessaire : ouvrez ce lien à l'heure du rendez-vous, indiquez votre nom, puis rejoignez la salle. " +
@@ -124,6 +127,7 @@ export function buildInvitation({ title, startsAt, link, maxParticipants, isHost
     'Bonjour,',
     '',
     intro,
+    ...(titleLine ? [titleLine] : []),
     `Rendez-vous : ${moment} (heure de Paris).`,
     '',
     'Rejoindre la réunion :',
@@ -138,7 +142,8 @@ export function buildInvitation({ title, startsAt, link, maxParticipants, isHost
   const html = `<!doctype html>
 <html lang="fr"><body style="margin:0;padding:24px;background:#0b1220;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#e2e8f0">
   <div style="max-width:520px;margin:0 auto;background:#111c30;border-radius:16px;padding:24px">
-    <p style="margin:0 0 16px;font-size:15px;line-height:1.6">${escapeHtml(intro)}</p>
+    <p style="margin:0 0 ${titleLine ? '4' : '16'}px;font-size:15px;line-height:1.6">${escapeHtml(intro)}</p>${titleLine ? `
+    <p style="margin:0 0 16px;font-size:18px;line-height:1.4;font-weight:600;color:#ffffff">${escapeHtml(titleLine)}</p>` : ''}
     <p style="margin:0 0 20px;font-size:15px;line-height:1.6"><strong>Rendez-vous :</strong> ${escapeHtml(moment)} (heure de Paris)</p>
     <p style="margin:0 0 20px"><a href="${safeLink}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#3b82f6;color:#ffffff;text-decoration:none;font-weight:600">Rejoindre la réunion</a></p>
     <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#94a3b8">Lien direct : <a href="${safeLink}" style="color:#93c5fd">${safeLink}</a></p>
