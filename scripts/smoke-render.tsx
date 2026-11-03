@@ -51,7 +51,7 @@ import {
 } from '../src/media/backgroundBlur'
 import { DEFAULT_MEETING_TITLE, MAX_MEETING_TITLE_LENGTH, normalizeMeetingTitle } from '../src/lib/meetingTitle'
 import { MeetingApiError } from '../src/meeting/rtkApi'
-import { describeChatError, describeSessionError } from '../src/meeting/rtkErrors'
+import { describeChatError, describeFileError, describeSessionError } from '../src/meeting/rtkErrors'
 import {
   buildInvitationUrl,
   buildMeetingUrl,
@@ -775,6 +775,29 @@ checks.push({
       'coupure pendant l’envoi expliquée',
     )
     expect(describeChatError(undefined).includes('Réessayez'), 'échec inconnu : message actionnable')
+
+    // Le SDK regroupe sous 0500 tous les échecs d'envoi de fichier, et son
+    // message est en anglais (« Internal exception ») : il n'est jamais affiché.
+    expect(
+      describeFileError({ code: '0500' }).includes('fichier plus léger'),
+      'échec de fichier (0500) expliqué et actionnable',
+    )
+    expect(
+      describeSessionError({ code: '0500', name: 'ClientError' }).message.includes('fichier'),
+      'erreur 0500 traduite pour la salle',
+    )
+    expect(
+      !describeSessionError({ code: '0500', name: 'ClientError' }).message.includes('Internal'),
+      'aucun texte brut du SDK exposé',
+    )
+    expect(
+      !describeSessionError({ code: '0455', name: 'ClientError' }).message.includes('exception'),
+      'code inconnu : message français, code conservé',
+    )
+    expect(
+      describeSessionError({ code: '0455', name: 'ClientError' }).code === '0455',
+      'code inconnu conservé pour le diagnostic',
+    )
   },
 })
 
