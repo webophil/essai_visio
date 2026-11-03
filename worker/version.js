@@ -9,5 +9,5 @@
  * Ne pas modifier à la main : lancer `npm run version:stamp`.
  */
 export const APP_VERSION = '2.1.0'
-export const BUILD_COMMIT = '10f4cda-dirty'
-export const BUILD_COMMIT_DATE = '2026-10-19T19:17:10+02:00'
+export const BUILD_COMMIT = '7adc932-dirty'
+export const BUILD_COMMIT_DATE = '2026-11-03T17:46:30+00:00'
