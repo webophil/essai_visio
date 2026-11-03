@@ -45,3 +45,11 @@ jobs:
 
       - name: Tests du Worker
         run: npm run test:worker
+
+      # Construire et vérifier l'artefact dès la PR : si `main` ne peut pas être
+      # publié, la fusion doit échouer ici, pas au moment du déploiement.
+      - name: Construire l'artefact publiable
+        run: npm run build
+
+      - name: Vérifier l'artefact (manifeste, modules, assets)
+        run: npm run verify:artifact

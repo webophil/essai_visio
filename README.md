@@ -282,18 +282,30 @@ prévisualisation.
 ### Vérifications
 
 ```bash
-npm run typecheck   # TypeScript
-npm run lint        # Oxlint
-npm run test:smoke  # routeur, identifiants, formatage, rendu des écrans
-npm run test:worker # Worker : routage, repli SPA, API, autorisations, capacité, anti-fuite
+npm run typecheck       # TypeScript
+npm run lint            # Oxlint
+npm run test:smoke      # routeur, identifiants, formatage, rendu des écrans
+npm run test:worker     # Worker : routage, repli SPA, API, autorisations, capacité, anti-fuite
+npm run build           # artefact publiable : dist/ + worker/version.js estampillé
+npm run verify:artifact # manifeste, modules, imports, assets : refuse un artefact non publiable
+npm run check:deployed  # compare /api/version en production au commit local
 ```
+
+`verify:artifact` revérifie ce que la plateforme refusera ou masquera : un module importé mais
+absent du manifeste, un `index.html` pointant un asset inexistant, une source map, un fichier
+d'environnement, ou un dépassement des limites (1 000 fichiers, 10 Mio).
+
+`check:deployed` sort en `0` si la production sert le commit local, `1` en cas d'écart (production
+en avance ou en retard sur le dépôt) et `2` si l'endpoint est absent. C'est le contrôle qui rend
+impossible la panne d'origine : une production plus récente que le dépôt.
 
 `test:worker` exécute le handler `fetch` du Worker avec un binding `ASSETS` simulé et une API
 Cloudflare RealtimeKit interceptée : aucun appel réseau réel, aucune réunion créée.
 
-Ces quatre commandes tournent aussi dans **GitHub Actions** (`.github/workflows/ci.yml`) à chaque
-pull request et sur `main`. Le workflow **ne déploie rien** : il empêche seulement de fusionner du
-code dont les types, le lint ou les tests échouent.
+Ces commandes tournent aussi dans **GitHub Actions** (`.github/workflows/ci.yml`) à chaque pull
+request et sur `main`, avec en plus la construction de l'artefact et sa vérification
+(`verify:artifact`). Le workflow **ne déploie rien** : il empêche de fusionner du code dont les
+types, le lint, les tests ou l'artefact échouent.
 
 ### Vérifications manuelles (deux machines)
 

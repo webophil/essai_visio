@@ -1,0 +1,22 @@
+{
+  // Configuration de déploiement Cloudflare Workers pour PhilDEV Visio.
+  //
+  // Elle reproduit exactement ce que fait le manifeste FreeBuff Sites :
+  // un Worker qui reçoit **toutes** les requêtes (`run_worker_first`) puis
+  // appelle `env.ASSETS.fetch()` lui-même. Sans cela, la couche assets
+  // répondrait avant le Worker et le repli SPA (décidé dans `worker/index.js`)
+  // ne s'exécuterait jamais.
+  //
+  // `verify:artifact` vérifie que `dist/` a bien été construit avant publication.
+  "name": "phildev-visio",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-13",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": true
+  }
+}

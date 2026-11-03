@@ -34,3 +34,6 @@ public/vendor/
 .env
 .env.*
 !.env.example
+
+# État local de wrangler (sqlite miniflare, bundles temporaires)
+.wrangler

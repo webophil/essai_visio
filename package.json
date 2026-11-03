@@ -14,7 +14,10 @@
     "test:smoke": "vite build --ssr scripts/smoke-render.tsx --outDir .smoke-out --emptyOutDir --logLevel warn && node .smoke-out/smoke-render.js",
     "test:worker": "node scripts/worker-tests.mjs",
     "preview": "vite preview",
-    "version:stamp": "node scripts/stamp-version.mjs"
+    "version:stamp": "node scripts/stamp-version.mjs",
+    "verify:artifact": "node scripts/verify-artifact.mjs",
+    "check:deployed": "node scripts/check-deployed-version.mjs",
+    "release": "npm run build && npm run verify:artifact"
   },
   "dependencies": {
     "@cloudflare/realtimekit": "^2.0.3",

@@ -1,0 +1,94 @@
+# Publication en production à chaque fusion sur `main`.
+#
+# Le déclencheur est la fin du workflow CI : la production n'est publiée que si
+# les types, le lint, les tests et la vérification d'artefact sont passés. Un
+# commit rouge ne peut donc pas atteindre la production, et un commit vert y
+# arrive sans intervention manuelle.
+#
+# Prérequis (à faire une fois) :
+#   - secret   CLOUDFLARE_API_TOKEN  : jeton « Workers Scripts: Edit » + « Account Settings: Read »
+#   - secret   CLOUDFLARE_ACCOUNT_ID : identifiant du compte Cloudflare
+#   - variable PRODUCTION_URL        : URL servie par ce Worker (le contrôle de
+#                                      version s'active quand elle est définie)
+#
+# Tant que `PRODUCTION_URL` n'est pas définie — c'est-à-dire tant que le domaine
+# `visio.phildev.online` pointe encore sur FreeBuff Sites — le déploiement a
+# bien lieu, mais la vérification de bout en bout est sautée : elle porterait
+# sur l'ancien hébergeur.
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois, et jamais d'annulation au milieu d'une
+# publication : la production doit rester dans un état connu.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publier sur Cloudflare Workers
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupérer le commit validé par la CI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier que les secrets de publication existent
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Secret CLOUDFLARE_API_TOKEN absent : ajouter le jeton Workers dans Settings → Secrets, puis relancer."
+            exit 1
+          fi
+
+      - name: Construire et vérifier l'artefact
+        run: npm run release
+
+      # L'artefact publié doit annoncer exactement le commit en cours : c'est ce
+      # qui interdit de publier un code différent de celui du dépôt.
+      - name: Vérifier l'estampille de version
+        run: |
+          stamped=$(sed -n "s/.*BUILD_COMMIT = '\([^']*\)'.*/\1/p" worker/version.js)
+          expected=$(git rev-parse --short HEAD)
+          echo "estampille=$stamped commit=$expected"
+          if [ "$stamped" != "$expected" ]; then
+            echo "::error::L'artefact annonce « $stamped » alors que le commit publié est « $expected »."
+            exit 1
+          fi
+
+      - name: Déployer
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+
+      - name: Contrôler la version réellement servie
+        if: vars.PRODUCTION_URL != ''
+        run: npm run check:deployed -- "${{ vars.PRODUCTION_URL }}"
