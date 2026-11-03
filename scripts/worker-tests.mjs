@@ -688,11 +688,37 @@ await testAsync('chaque destinataire reçoit son propre message, avec lien et he
   )
   assert.ok(guest.text.includes('Rendez-vous Aurore Studer'), 'nom réel de la réunion attendu')
   assert.match(guest.text, /Rendez-vous : .+heure de Paris/, 'heure du rendez-vous absente')
+  assert.equal(guest.from, 'PhilDEV Visio <invitation@phildev.online>', 'expéditeur par défaut attendu')
   assert.ok(!guest.subject.startsWith('Rappel'), 'sujet invité sans préfixe de rappel')
 
   const host = mailSends.find((mail) => mail.to === 'organisateur@exemple.fr')
   assert.ok(host, 'rappel à l’organisateur absent')
   assert.ok(host.subject.startsWith('Rappel'), 'sujet de rappel attendu pour l’organisateur')
+})
+
+await testAsync('MAIL_FROM remplace l’expéditeur par défaut', async () => {
+  mailSends.length = 0
+  const token = await login('10.3.0.6')
+  const realtimeKitId = seedMeeting()
+  rtkTitles.set(realtimeKitId, 'Réunion Expéditeur')
+
+  const response = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-PhilDEV-Host': token,
+      'CF-Connecting-IP': '10.3.0.6',
+    },
+    body: invitationBody(realtimeKitId),
+    env: { ...baseEnv, MAIL_FROM: '  contact@phildev.online  ' },
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal(
+    mailSends[0].from,
+    'contact@phildev.online',
+    'la valeur de MAIL_FROM doit être utilisée, espaces retirés',
+  )
 })
 
 await testAsync('adresses, date et réunion sont validées avant tout envoi', async () => {

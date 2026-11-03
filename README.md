@@ -225,7 +225,10 @@ Sans `RESEND_API_KEY`, l'envoi d'invitations répond `503 mail-not-configured` :
 salle restent utilisables, seul l'envoi d'e-mails est désactivé. Le domaine `phildev.online` doit
 en plus être **vérifié** chez le fournisseur (enregistrements DNS) avant le premier envoi.
 L'expéditeur par défaut est `PhilDEV Visio <invitation@phildev.online>` ; `MAIL_FROM` le surcharge
-(aucun secret n'est nécessaire pour cette variable, qui n'est qu'une adresse).
+(variable simple ou secret, seule la valeur compte, espaces retirés). Une adresse **nue**
+(`contact@phildev.online`) s'affiche telle quelle dans les boîtes de réception ; pour garder le nom
+visible, utilisez la forme `PhilDEV Visio <contact@phildev.online>`. Le domaine de cette adresse
+doit être vérifié chez le fournisseur, sinon l'envoi est refusé.
 
 L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application RealtimeKit
 (`09fe762d-4e8d-45c7-9129-a466ae061711`) sont des valeurs **non secrètes**, déclarées dans
