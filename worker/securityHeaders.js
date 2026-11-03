@@ -2,31 +2,36 @@
  * En-têtes HTTP de sécurité, appliqués à **toutes** les réponses du Worker :
  * API, assets statiques, 404 et repli SPA.
  *
- * La politique CSP complète est d'abord servie en `Report-Only` : elle ne bloque
- * rien, mais les violations apparaissent dans la console du navigateur. Cela
- * permet de vérifier les hôtes réellement utilisés par RealtimeKit (API,
- * signaling WebSocket, stockage du chat) et par MediaPipe avant de l'activer.
+ * La politique CSP est désormais **bloquante** (`CSP_ENFORCED = true`). Elle a
+ * été recoupée avec les hôtes réellement présents dans le bundle publié :
+ * `api.realtime.cloudflare.com`, le signaling `wss://*.realtime.cloudflare.com`,
+ * et les domaines `dyte.in` / `dyte.io` que le SDK RealtimeKit (bâti sur Dyte)
+ * porte encore dans son code comme cibles historiques.
  *
- * Seule la protection contre l'intégration en iframe est déjà appliquée, via
- * `frame-ancestors 'none'` et `X-Frame-Options: DENY`.
+ * Retour arrière : repasser `CSP_ENFORCED` à `false` et redéployer. La politique
+ * complète redevient alors un simple rapport, sans blocage.
  *
- * HSTS est volontairement absent : le domaine personnalisé n'est pas encore
- * validé, et un HSTS posé trop tôt serait difficile à retirer côté navigateurs.
+ * HSTS est activé : le domaine personnalisé `visio.phildev.online` est validé
+ * et servi en HTTPS depuis le 20/10/2026, donc la contrainte n'est plus
+ * prématurée. `preload` n'est volontairement pas demandé — l'inscription est
+ * très difficile à retirer ensuite.
  *
  * Limites connues de FreeBuff Sites :
  * - la plateforme injecte le beacon `static.cloudflareinsights.com` dans les
- *   documents de navigation. La CSP le bloquera volontairement (analytics
+ *   documents de navigation. La CSP le bloque volontairement (analytics
  *   désactivé) plutôt que d'autoriser un script tiers à lire `localStorage` ;
  * - `frame-ancestors 'none'` empêche aussi d'afficher la Preview Sites dans
  *   une iframe : ouvrir son URL directement dans un onglet.
  */
 
 /**
- * Passer à `true` après validation de la Preview en conditions réelles.
- * La politique complète devient alors `Content-Security-Policy` (bloquante)
- * et le `Report-Only` disparaît.
+ * Politique appliquée telle quelle. La repasser à `false` restaure le mode
+ * `Report-Only` (aucun blocage) : c'est le retour arrière d'urgence.
  */
-export const CSP_ENFORCED = false
+export const CSP_ENFORCED = true
+
+/** Durée HSTS : un an, sous-domaines inclus, sans `preload`. */
+export const STRICT_TRANSPORT_SECURITY = 'max-age=31536000; includeSubDomains'
 
 /**
  * Politique destinée à l'application réelle.
@@ -36,6 +41,9 @@ export const CSP_ENFORCED = false
  * - `api.realtime.cloudflare.com` couvre l'API RealtimeKit 2.0.3.
  * - `wss://*.realtime.cloudflare.com` couvre le signaling, y compris
  *   `socket-edge` si le SDK l'utilise encore.
+ * - `*.dyte.in` / `*.dyte.io` couvrent les hôtes hérités du SDK (RealtimeKit
+ *   est bâti sur Dyte) : ils apparaissent dans le bundle publié et servent de
+ *   repli si Cloudflare renvoie une URL de signaling historique.
  * - `r2.cloudflarestorage.com` est documenté pour le stockage des messages de
  *   chat ; à retirer si le test réel ne l'utilise pas.
  */
@@ -50,12 +58,12 @@ export const CONTENT_SECURITY_POLICY = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "font-src 'self'",
-  "connect-src 'self' https://api.realtime.cloudflare.com wss://api.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://r2.cloudflarestorage.com",
+  "connect-src 'self' https://api.realtime.cloudflare.com wss://api.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://*.dyte.in wss://*.dyte.in https://*.dyte.io wss://*.dyte.io https://r2.cloudflarestorage.com",
   "worker-src 'self'",
   "manifest-src 'self'",
 ].join('; ')
 
-/** Protection iframe minimale, active même tant que la CSP complète est en report-only. */
+/** Protection iframe minimale, conservée même en mode `Report-Only`. */
 export const FRAME_PROTECTION_POLICY = "frame-ancestors 'none'"
 
 /**
@@ -70,6 +78,7 @@ export function applySecurityHeaders(response) {
   headers.set('X-Content-Type-Options', 'nosniff')
   headers.set('Referrer-Policy', 'no-referrer')
   headers.set('X-Frame-Options', 'DENY')
+  headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY)
   headers.set(
     'Content-Security-Policy',
     CSP_ENFORCED ? CONTENT_SECURITY_POLICY : FRAME_PROTECTION_POLICY,

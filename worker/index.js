@@ -48,6 +48,24 @@ import {
   listPresets,
   presets,
 } from './realtimekit.js'
+import { APP_VERSION, BUILD_COMMIT, BUILD_COMMIT_DATE } from './version.js'
+
+/**
+ * Journalisation minimale des échecs côté serveur.
+ *
+ * Le Worker n'a pas d'autre observabilité : sans cette trace, une erreur
+ * RealtimeKit en production ne laisse aucune trace exploitable. Seuls le
+ * statut, le code et le nom de l'erreur sont écrits — jamais le jeton d'API,
+ * jamais la clé organisateur, jamais un en-tête ni un corps amont.
+ */
+function reportFailure(scope, error) {
+  const detail =
+    error instanceof RealtimeKitError
+      ? { status: error.status, code: error.code }
+      : { name: error?.name ?? 'Error', message: String(error?.message ?? error).slice(0, 200) }
+
+  console.error('[phildev-visio] échec', scope, detail)
+}
 
 /** Méthodes pour lesquelles un repli vers `index.html` a un sens. */
 const FALLBACK_METHODS = new Set(['GET', 'HEAD'])
@@ -121,6 +139,8 @@ function failure(status, error, message, headers = {}) {
  * statut amont et le message brut ne sont jamais transmis au navigateur.
  */
 function realtimeKitFailure(error) {
+  reportFailure('realtimekit', error)
+
   if (!(error instanceof RealtimeKitError)) {
     return failure(502, 'realtimekit-error', "Le service de visioconférence a renvoyé une réponse inattendue.")
   }
@@ -413,10 +433,23 @@ async function handleDiagnostic(request, env) {
 async function routeApi(request, url, env) {
   const path = url.pathname.replace(/\/+$/, '') || '/'
 
+  // Version réellement déployée : le commit vient de `worker/version.js`, écrit
+  // par `npm run build`. Permet de répondre à « quel code tourne en prod ? »
+  // sans accès au tableau de bord ni à la clé organisateur.
+  if (path === '/api/version' && (request.method === 'GET' || request.method === 'HEAD')) {
+    return json({
+      service: 'phildev-visio',
+      version: APP_VERSION,
+      commit: BUILD_COMMIT,
+      commitDate: BUILD_COMMIT_DATE,
+    })
+  }
   if (path === '/api/health' && (request.method === 'GET' || request.method === 'HEAD')) {
     return json({
       ok: true,
       service: 'phildev-visio',
+      version: APP_VERSION,
+      commit: BUILD_COMMIT,
       realtimeKitConfigured: hasApiToken(env) && hasHostSecret(env),
     })
   }
@@ -463,7 +496,20 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-      return applySecurityHeaders(await routeApi(request, url, env))
+      // Filet de sécurité : une exception imprévue dans l'API ne doit ni
+      // produire une page 500 sans explication, ni passer sans trace.
+      try {
+        return applySecurityHeaders(await routeApi(request, url, env))
+      } catch (error) {
+        reportFailure('api', error)
+        return applySecurityHeaders(
+          failure(
+            500,
+            'internal-error',
+            'Une erreur interne a empêché de traiter la demande. Réessayez dans un instant.',
+          ),
+        )
+      }
     }
 
     const response = await env.ASSETS.fetch(request)

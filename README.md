@@ -232,7 +232,8 @@ L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application Re
 
 | Méthode | Chemin | Accès | Rôle |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | public | Disponibilité du service |
+| `GET` | `/api/health` | public | Disponibilité du service (avec version et commit déployés) |
+| `GET` | `/api/version` | public | Version applicative et commit Git réellement déployés |
 | `POST` | `/api/host/session` | clé organisateur | Échange la clé contre une session signée (30 jours) |
 | `POST` | `/api/meetings` | **session hôte** | Crée une réunion et réserve l'emplacement de l'organisateur |
 | `GET` | `/api/meetings/:id` | public | Nom de la réunion (identifiant et titre uniquement) |
@@ -290,10 +291,19 @@ npm run test:worker # Worker : routage, repli SPA, API, autorisations, capacité
 `test:worker` exécute le handler `fetch` du Worker avec un binding `ASSETS` simulé et une API
 Cloudflare RealtimeKit interceptée : aucun appel réseau réel, aucune réunion créée.
 
+Ces quatre commandes tournent aussi dans **GitHub Actions** (`.github/workflows/ci.yml`) à chaque
+pull request et sur `main`. Le workflow **ne déploie rien** : il empêche seulement de fusionner du
+code dont les types, le lint ou les tests échouent.
+
 ### Vérifications manuelles (deux machines)
 
 Le flou et le chat engagent du matériel et deux navigateurs : ces deux points se contrôlent à la
 main, depuis l'adresse de prévisualisation.
+
+> Depuis la PR #4, l'entrée « Effets » est retirée de la barre de contrôle
+> (`src/components/meeting/ControlBar.tsx`) : le moteur et son panneau restent dans le code, mais
+> les étapes 7 à 10 bis ci-dessous décrivent une fonctionnalité **non exposée** aujourd'hui, à
+> réactiver avant de les rejouer.
 
 | Étape | Attendu |
 | --- | --- |
@@ -321,7 +331,7 @@ Deux fichiers versionnés suffisent à reproduire un déploiement :
 
 | Fichier | Rôle |
 | --- | --- |
-| `preview.manifest.json` | Manifeste : `entrypoint`, `modules` (4 fichiers du Worker), `assetsDirectory` |
+| `preview.manifest.json` | Manifeste : `entrypoint`, `modules` (6 fichiers du Worker, dont `version.js`), `assetsDirectory` |
 | `worker/*.js` | Worker : API RealtimeKit puis service des assets |
 
 `dist/` n'est pas versionné : il est reconstruit par `npm run build` avant tout déploiement.
@@ -332,10 +342,45 @@ un déploiement.
 ### Déploiement explicite uniquement
 
 Un déploiement est **toujours un appel explicite** à l'outil Sites, avec un environnement
-(`preview` ou `production`) et une clé d'idempotence. Ce dépôt ne contient **aucune** configuration
-d'intégration continue (ni `.github/`, ni `wrangler.toml`) et le site n'est relié à aucun dépôt :
+(`preview` ou `production`) et une clé d'idempotence. Le dépôt contient un workflow d'intégration
+continue (`.github/workflows/ci.yml`), mais **aucune configuration de déploiement** (ni
+`wrangler.toml`, ni secret Cloudflare dans GitHub) et le site n'est relié à aucun dépôt :
 **un commit ou un push GitHub ne déclenche aucun déploiement**. La production n'est jamais publiée
 sans autorisation explicite.
+
+### Connaître la version déployée
+
+`worker/version.js` est **généré** : `scripts/stamp-version.mjs` l'écrit avant chaque
+`npm run build` (crochet `prebuild`) à partir de `package.json` et du commit Git courant. Le Worker
+étant déployé module par module, sans bundler, sa version doit vivre dans un fichier du dépôt.
+
+```bash
+curl -s https://visio.phildev.online/api/version
+# {"service":"phildev-visio","version":"2.1.0","commit":"10f4cda","commitDate":"…"}
+```
+
+Deux règles :
+
+- **construire depuis un arbre propre** — le commit annoncé est celui de `HEAD`. Si un fichier suivi
+  est modifié, la valeur devient `<commit>-dirty` : un `-dirty` en production signale une
+  publication non traçable, et c'est volontaire ;
+- la copie **versionnée** de `worker/version.js` retarde donc d'un commit sur la copie construite
+  juste après (le fichier ne peut pas contenir son propre SHA). C'est la valeur servie par
+  `/api/version` qui fait foi, pas celle du dépôt ;
+- une publication automatisée supprime ce décalage : la construction part d'un checkout propre, où
+  `HEAD` est exactement le commit publié.
+
+### CSP et HSTS
+
+`worker/securityHeaders.js` applique la politique CSP **bloquante** (`CSP_ENFORCED = true`) et
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`. La politique autorise les hôtes
+réellement utilisés par le SDK : API `api.realtime.cloudflare.com`, signaling
+`wss://*.realtime.cloudflare.com`, et les domaines `dyte.in` / `dyte.io` que RealtimeKit (bâti sur
+Dyte) porte encore dans son code. Le beacon d'analytics de la plateforme reste bloqué : il lit
+`localStorage`.
+
+Retour arrière d'urgence : repasser `CSP_ENFORCED` à `false` et redéployer — la politique redevient
+un simple rapport, sans blocage.
 
 ### Pourquoi `spa: true` doit rester absent du manifeste
 

@@ -245,36 +245,47 @@ await testAsync('le document et les assets reçoivent les en-têtes de sécurit�
     assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
     assert.match(response.headers.get('Content-Security-Policy') ?? '', /frame-ancestors 'none'/)
 
-    const reportOnly = response.headers.get('Content-Security-Policy-Report-Only') ?? ''
-    assert.match(reportOnly, /default-src 'self'/, 'CSP report-only absente')
-    assert.match(reportOnly, /script-src 'self' 'wasm-unsafe-eval'/, 'MediaPipe doit rester autorisé')
-    assert.match(reportOnly, /https:\/\/api\.realtime\.cloudflare\.com/, 'API RealtimeKit absente')
-    assert.match(reportOnly, /wss:\/\/\*\.realtime\.cloudflare\.com/, 'signaling RealtimeKit absent')
+    const policy = response.headers.get('Content-Security-Policy') ?? ''
+    assert.match(policy, /default-src 'self'/, 'CSP bloquante absente')
+    assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/, 'MediaPipe doit rester autorisé')
+    assert.match(policy, /https:\/\/api\.realtime\.cloudflare\.com/, 'API RealtimeKit absente')
+    assert.match(policy, /wss:\/\/\*\.realtime\.cloudflare\.com/, 'signaling RealtimeKit absent')
+    assert.match(policy, /wss:\/\/\*\.dyte\.in/, 'hôtes hérités du SDK absents')
+    assert.equal(
+      response.headers.get('Content-Security-Policy-Report-Only'),
+      null,
+      'plus aucun Report-Only attendu',
+    )
+    assert.match(
+      response.headers.get('Strict-Transport-Security') ?? '',
+      /max-age=31536000/,
+      'HSTS absent',
+    )
   }
 })
 
-await testAsync('la CSP complète reste en Report-Only et HSTS reste absent', async () => {
+await testAsync('la CSP bloque réellement et HSTS protège le domaine', async () => {
   const response = await appRequest('/', { headers: { 'Sec-Fetch-Mode': 'navigate', Accept: 'text/html' } })
-  assert.equal(
-    response.headers.get('Content-Security-Policy'),
-    "frame-ancestors 'none'",
-    'la CSP complète ne doit pas encore bloquer les ressources',
-  )
-  assert.ok(response.headers.get('Content-Security-Policy-Report-Only'))
-  assert.equal(response.headers.get('Strict-Transport-Security'), null, 'HSTS ne doit pas être activé')
+  const policy = response.headers.get('Content-Security-Policy') ?? ''
+
+  assert.match(policy, /frame-ancestors 'none'/, 'intégration iframe non bloquée')
+  assert.match(policy, /connect-src 'self' https:\/\/api\.realtime\.cloudflare\.com/, 'connect-src incomplète')
+  assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/, 'script-src incomplète')
+  assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains')
+  assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
 })
 
 await testAsync('les réponses 404 et API conservent leurs en-têtes et reçoivent les nouveaux', async () => {
   const missing = await appRequest('/assets/absent-xyz.js', { headers: { 'Sec-Fetch-Mode': 'script' } })
   assert.equal(missing.status, 404)
   assert.equal(missing.headers.get('X-Content-Type-Options'), 'nosniff')
-  assert.ok(missing.headers.get('Content-Security-Policy-Report-Only'))
+  assert.match(missing.headers.get('Content-Security-Policy') ?? '', /default-src 'self'/, 'CSP absente sur un 404')
 
   const health = await appRequest('/api/health', { headers: { 'CF-Connecting-IP': '10.0.0.99' } })
   assert.equal(health.status, 200)
   assert.equal(health.headers.get('Cache-Control'), 'no-store')
   assert.equal(health.headers.get('X-Content-Type-Options'), 'nosniff')
-  assert.ok(health.headers.get('Content-Security-Policy-Report-Only'))
+  assert.match(health.headers.get('Content-Security-Policy') ?? '', /default-src 'self'/, 'CSP absente sur l’API')
 })
 
 group('API : état et sécurité')
@@ -284,6 +295,18 @@ await testAsync('GET /api/health répond sans secret', async () => {
   assert.equal(response.status, 200)
   const payload = await readJson(response, 'health')
   assert.equal(payload.ok, true)
+})
+
+await testAsync('GET /api/version identifie le commit déployé', async () => {
+  const response = await appRequest('/api/version', { headers: { 'CF-Connecting-IP': '10.0.0.4' } })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('Cache-Control'), 'no-store')
+
+  const payload = await readJson(response, 'version')
+  assert.equal(payload.service, 'phildev-visio')
+  assert.match(payload.version, /^\d+\.\d+\.\d+$/, 'version sémantique attendue')
+  assert.match(payload.commit, /^[0-9a-f]{7,40}(-dirty)?$/, 'commit Git attendu')
+  assert.equal(typeof payload.commitDate, 'string')
 })
 
 await testAsync('les réponses d’API ne sont jamais mises en cache', async () => {
