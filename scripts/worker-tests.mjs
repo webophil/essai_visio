@@ -313,6 +313,17 @@ await testAsync('GET /api/health répond sans secret', async () => {
   assert.equal(payload.ok, true)
 })
 
+await testAsync('GET /api/health indique si l’envoi d’e-mails est configuré', async () => {
+  const withKey = await appRequest('/api/health', { headers: { 'CF-Connecting-IP': '10.0.0.5' } })
+  assert.equal((await readJson(withKey, 'health configuré')).mailConfigured, true)
+
+  const withoutKey = await appRequest('/api/health', {
+    headers: { 'CF-Connecting-IP': '10.0.0.6' },
+    env: { CLOUDFLARE_API_TOKEN: API_TOKEN, PHILDEV_HOST_KEY: HOST_KEY, ASSETS: { fetch: assetsFetch } },
+  })
+  assert.equal((await readJson(withoutKey, 'health sans clé')).mailConfigured, false)
+})
+
 await testAsync('GET /api/version identifie le commit déployé', async () => {
   const response = await appRequest('/api/version', { headers: { 'CF-Connecting-IP': '10.0.0.4' } })
   assert.equal(response.status, 200)

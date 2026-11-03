@@ -567,6 +567,7 @@ async function handleDiagnostic(request, env) {
   const report = {
     apiTokenPresent: config.tokenPresent,
     hostKeyPresent: hasHostSecret(env),
+    mailConfigured: hasMailer(env),
     accountId: config.accountId,
     appId: config.appId,
     presetsExpected: { host: config.hostPreset, guest: config.guestPreset },
@@ -609,6 +610,9 @@ async function routeApi(request, url, env) {
       version: APP_VERSION,
       commit: BUILD_COMMIT,
       realtimeKitConfigured: hasApiToken(env) && hasHostSecret(env),
+      // Simple présence du secret d'envoi, jamais sa valeur : permet de
+      // vérifier depuis l'extérieur qu'un envoi d'invitations est possible.
+      mailConfigured: hasMailer(env),
     })
   }
 
