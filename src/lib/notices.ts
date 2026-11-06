@@ -28,12 +28,6 @@ export const NOTICES = {
   chatUnavailable:
     "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
 
-  /** Effets de fond */
-  backgroundEffects:
-    "Le flou ou le décor s'applique à votre flux vidéo avant sa diffusion : seuls les participants voient le résultat, votre caméra locale n'est pas modifiée. Une image importée reste sur cet appareil.",
-  backgroundBlurUnsupported:
-    "Si votre navigateur ne prend pas en charge le détourage, l'effet n'est pas activé : votre caméra reste diffusée normalement, sans effet et sans message d'erreur technique.",
-
   /** Matériel */
   deviceFallback:
     "Si votre navigateur refuse l'accès au matériel, vous pouvez malgré tout rejoindre la réunion pour écouter et partager votre écran.",

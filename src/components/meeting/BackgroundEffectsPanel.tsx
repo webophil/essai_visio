@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Check, ImagePlus, Info, Loader2, Sparkles, Trash2, WandSparkles } from 'lucide-react'
+import { Check, ImagePlus, Loader2, Trash2, WandSparkles } from 'lucide-react'
 
 import { Notice } from '../ui/Notice'
 import { SidePanel } from '../ui/SidePanel'
-import { NOTICES } from '../../lib/notices'
 import { BACKDROP_PRESETS } from '../../media/backdrops'
 import { useMeeting } from '../../state/meetingContext'
 import type { VideoBackdrop, VideoEffectChoice } from '../../types/meeting'
@@ -94,8 +93,8 @@ function EffectTile({
  * la page. Aucune option n'est affichée sans être rendue (voir
  * `src/media/backgroundBlur.ts`).
  *
- * Aucun compteur ni donnée de diagnostic n'est affiché : les participants ne
- * sont pas techniciens, et ces mesures ne concernent que le développement.
+ * Rien n'explique ici comment le détourage fonctionne : les participants ne
+ * sont pas techniciens, et ces détails ne changent aucune de leurs décisions.
  */
 export function BackgroundEffectPicker() {
   const { videoEffect, setVideoEffect, videoEffectBusy, videoEffectError } = useMeeting()
@@ -242,12 +241,6 @@ export function BackgroundEffectPicker() {
           </div>
         ) : null}
       </section>
-
-      <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-400">
-        <Sparkles aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
-        Le détourage est calculé sur cet appareil, image par image. Sur une machine modeste, la
-        fluidité de votre vidéo peut baisser légèrement.
-      </p>
     </div>
   )
 }
@@ -258,24 +251,7 @@ export function BackgroundEffectsPanel() {
 
   return (
     <SidePanel title="Effets de fond" icon={WandSparkles} onClose={closePanel}>
-      <div className="flex flex-col gap-4">
-        <BackgroundEffectPicker />
-
-        <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
-          <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-          Tant qu’un effet est actif, votre aperçu n’est plus en miroir : le décor et ses éventuels
-          textes restent lisibles, comme chez les autres participants.
-        </p>
-
-        <Notice tone="info" title="Traitement local" className="text-xs">
-          {NOTICES.backgroundEffects}
-        </Notice>
-
-        <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
-          <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-          {NOTICES.backgroundBlurUnsupported}
-        </p>
-      </div>
+      <BackgroundEffectPicker />
     </SidePanel>
   )
 }

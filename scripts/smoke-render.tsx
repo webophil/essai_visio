@@ -1063,10 +1063,16 @@ checks.push({
       expect(effects.includes('Studio') && effects.includes('Ardoise'), 'décors peints proposés')
       expect(!effects.includes('Sable') && !effects.includes('Nuit'), 'décors retirés absents')
       expect(effects.includes('Importer une image'), 'import d’image locale proposé')
-      expect(effects.includes('Traitement local'), 'traitement local expliqué')
       expect(
         !effects.includes('Images reçues') && !effects.includes('Détourages') && !effects.includes('masque brut'),
         'aucun compteur technique dans le panneau',
+      )
+      expect(
+        !effects.includes('Traitement local') &&
+          !effects.includes('détourage est calculé') &&
+          !effects.includes('plus en miroir') &&
+          !effects.includes('ne prend pas en charge le détourage'),
+        'aucune explication technique sous l’import',
       )
       expect(!effects.includes('Image personnelle active'), 'aucune image annoncée sans import')
 
@@ -1077,7 +1083,6 @@ checks.push({
         backdrop: { kind: 'preset', preset: 'ardoise' },
       })
       expect(!decored.includes('-scale-x-100'), 'aperçu non inversé dès qu’un effet est actif')
-      expect(decored.includes('plus en miroir'), 'changement d’orientation expliqué')
     } finally {
       if (previousWindow === undefined) delete scope.window
       else scope.window = previousWindow
