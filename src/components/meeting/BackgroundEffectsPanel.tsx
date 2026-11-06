@@ -269,6 +269,12 @@ export function BackgroundEffectsPanel() {
 
         <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
           <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          Tant qu’un effet est actif, votre aperçu n’est plus en miroir : le décor et ses éventuels
+          textes restent lisibles, comme chez les autres participants.
+        </p>
+
+        <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-500">
+          <Info aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
           {NOTICES.backgroundBlurUnsupported}
         </p>
       </div>

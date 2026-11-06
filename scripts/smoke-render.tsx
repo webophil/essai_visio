@@ -600,6 +600,7 @@ checks.push({
     const stageContext = {
       participantName: 'Aurore',
       setScreenShareEnabled: async () => {},
+      videoEffect: { id: 'none' },
     } as unknown as MeetingContextValue
 
     const stageHtml = renderToStaticMarkup(
@@ -974,7 +975,11 @@ checks.push({
       removeListener: () => {},
     })
 
-    const renderRoom = (remoteCount: number, panel: 'effects' | null = null) => {
+    const renderRoom = (
+      remoteCount: number,
+      panel: 'effects' | null = null,
+      effect: { id: string; backdrop?: { kind: string; preset?: string } } = { id: 'none' },
+    ) => {
       const remotes = Array.from({ length: remoteCount }, (_, index) => remote(index + 1))
       const roomClient = {
         self: {
@@ -1009,7 +1014,7 @@ checks.push({
         setCameraEnabled: async () => {},
         client: roomClient,
         media: { hasVideoTrack: true, videoEnabled: true },
-        videoEffect: { id: 'none' },
+        videoEffect: effect,
         setVideoEffect: async () => {},
         videoEffectBusy: false,
         videoEffectError: null,
@@ -1040,6 +1045,7 @@ checks.push({
       expect(!waiting.includes('contrôle est effectué côté serveur'), 'aucune explication de contrôle serveur')
       expect(!waiting.includes('Cloudflare'), 'aucune mention technique dans la salle')
       expect(waiting.includes('Effets'), 'bouton « Effets » exposé')
+      expect(waiting.includes('-scale-x-100'), 'aperçu local en miroir sans effet')
       expect(waiting.includes('En attente des participants'), 'bandeau d’attente simplifié')
       expect(
         waiting.includes('Partagez le lien de réunion pour les inviter.'),
@@ -1058,6 +1064,15 @@ checks.push({
       expect(effects.includes('Importer une image'), 'import d’image locale proposé')
       expect(effects.includes('Traitement local'), 'traitement local expliqué')
       expect(!effects.includes('Image personnelle active'), 'aucune image annoncée sans import')
+
+      // Avec un effet, l'aperçu ne doit plus être inversé : sinon un logo du
+      // décor s'affiche à l'envers dans la seule vue de l'utilisateur.
+      const decored = renderRoom(1, 'effects', {
+        id: 'backdrop',
+        backdrop: { kind: 'preset', preset: 'nuit' },
+      })
+      expect(!decored.includes('-scale-x-100'), 'aperçu non inversé dès qu’un effet est actif')
+      expect(decored.includes('plus en miroir'), 'changement d’orientation expliqué')
     } finally {
       if (previousWindow === undefined) delete scope.window
       else scope.window = previousWindow

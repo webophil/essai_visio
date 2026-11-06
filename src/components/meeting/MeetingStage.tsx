@@ -264,12 +264,21 @@ function SelfTile({
   const { meeting } = useRealtimeKitMeeting()
   const videoEnabled = useRealtimeKitSelector((client) => client.self.videoEnabled)
   const audioEnabled = useRealtimeKitSelector((client) => client.self.audioEnabled)
+  const { videoEffect } = useMeeting()
 
   return (
     <div className={compact ? COMPACT_TILE_CLASS : stageTileClass(tiles)}>
       <RtkSelfVideo
         self={meeting.self}
         enabled={videoEnabled}
+        /*
+         * L'aperçu local est en miroir tant qu'aucun effet n'est actif, comme
+         * dans toute visioconférence. Avec un effet, le miroir est coupé : le
+         * décor composé (et un éventuel logo) s'affiche alors exactement comme
+         * chez les autres participants. Le flux publié, lui, n'est jamais
+         * inversé.
+         */
+        mirrored={videoEffect.id === 'none'}
         label={`Votre flux vidéo (${name})`}
         className="size-full"
         placeholder={

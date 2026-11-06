@@ -157,6 +157,11 @@ Elle est chargée par le navigateur sous forme d'URL d'objet, **n'est jamais té
 conservée après la réunion, et cadrée en « cover » (centrée puis rognée, jamais étirée). Elle est
 libérée dès qu'une autre image la remplace.
 
+Tant qu'aucun effet n'est actif, votre aperçu local est en miroir, comme dans toute
+visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux publié** : un logo ou un
+slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
+n'a jamais été inversé.
+
 ### Qualité de l'image
 
 Trois réglages expliquent l'écart entre la première version et celle-ci :
