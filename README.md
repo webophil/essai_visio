@@ -161,13 +161,18 @@ libérée dès qu'une autre image la remplace.
 
 Trois réglages expliquent l'écart entre la première version et celle-ci :
 
-- **masque à 256 px de large** (contre 160) et **lissage temporel** : la nouvelle mesure ne pèse que
-  55 % du contour affiché, le reste vient de l'image précédente. Un contour qui hésite (cheveux,
-  lunettes, main qui passe) ne scintille plus, sans retard perceptible ;
+- **masque à 256 px de large** (contre 160) et **lissage adaptatif** : à l'arrêt, la nouvelle mesure
+  ne pèse que 35 % du contour affiché et le stabilise ; dès que la silhouette bouge, elle monte
+  jusqu'à 95 %, pour ne plus laisser de traînée derrière la tête ;
 - **flou composé à l'agrandissement** : le fond est réduit d'un facteur 6 puis agrandi avec un
   rayon de 5 px. Un simple redimensionnement bilinéaire laissait des blocs visibles sur un mur uni ;
-- **contour adouci sur 4 px** au lieu de 3, et composition à la résolution réelle de la piste
-  (plafonnée à 1280 px de large).
+- **calque « personne » à la résolution publiée** (1280 px au plus) et contour adouci sur 2 px de ce
+  flux. Il était auparavant réduit à 480 px puis agrandi, et son adoucissement de 4 px valait ~11 px
+  une fois agrandi : d'où un visage cotonneux ;
+- **aucune fuite de la pièce réelle** : si une analyse ne détecte plus personne (mouvement rapide),
+  le dernier masque fiable est réutilisé jusqu'à quatre analyses, et le fond est de toute façon
+  recomposé. Sans cela, l'image brute restait affichée un dixième de seconde — le décor semblait
+  « gommer » la personne.
 
 Le détourage reste calculé à ~12 images/s : entre deux calculs, le dernier masque est réutilisé. Le
 coût reste borné sur une machine modeste, et le panneau affiche les compteurs réels.

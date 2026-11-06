@@ -43,6 +43,7 @@ import {
   applyVideoEffect,
   applyVideoEffectWith,
   fitCoverRect,
+  maskMotion,
   maskOpacity,
   maskSizeFor,
   maskValueForPixel,
@@ -50,6 +51,7 @@ import {
   normalizedWorkSize,
   readVideoEffectStats,
   smoothMask,
+  smoothingWeight,
 } from '../src/media/backgroundBlur'
 import { BACKDROP_PRESETS, backdropPreset } from '../src/media/backdrops'
 import { DEFAULT_MEETING_TITLE, MAX_MEETING_TITLE_LENGTH, normalizeMeetingTitle } from '../src/lib/meetingTitle'
@@ -349,6 +351,19 @@ checks.push({
     untouched[3] = 90
     smoothMask(new Uint8ClampedArray(4), untouched, 0.5)
     expect(untouched[3] === 90, 'taille différente → aucun mélange (masque intact)')
+
+    // Lissage adaptatif : stable à l'arrêt, quasi instantané en mouvement.
+    const still = new Uint8ClampedArray(4 * 4)
+    const elsewhere = new Uint8ClampedArray(4 * 4)
+    for (let index = 3; index < still.length; index += 4) still[index] = 120
+    for (let index = 3; index < elsewhere.length; index += 4) elsewhere[index] = 240
+
+    expect(maskMotion(still, still) === 0, 'masque identique → aucun mouvement')
+    expect(maskMotion(null, still) === 1, 'premier masque → mouvement maximal')
+    expect(maskMotion(still, elsewhere) > 0.4, 'changement net mesuré')
+    expect(smoothingWeight(0) < 0.4, 'à l’arrêt, le masque est fortement lissé')
+    expect(smoothingWeight(1) > 0.9, 'en mouvement, la mesure fraîche domine')
+    expect(smoothingWeight(0.1) > smoothingWeight(0), 'poids croissant avec le mouvement')
   },
 })
 

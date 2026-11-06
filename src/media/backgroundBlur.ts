@@ -74,23 +74,54 @@ const BLUR_DIVISOR = 6
  */
 const BACKDROP_BLUR_PX = 5
 
-/** Rayon d'adoucissement du contour de la silhouette, en pixels. */
-const FEATHER_PX = 4
+/**
+ * Rayon d'adoucissement du contour, **en pixels du flux publié**.
+ *
+ * Il s'appliquait auparavant au calque « personne », large de 480 px : les
+ * 4 px devenaient ~11 px une fois ce calque agrandi à 1280, d'où un visage très
+ * flou. Le calque est désormais à la résolution publiée et ce rayon vaut ce
+ * qu'il annonce.
+ */
+const FEATHER_PX = 2
 
 /**
- * Part de la nouvelle mesure dans le masque affiché.
+ * Part de la nouvelle mesure dans le masque affiché, à l'arrêt.
  *
  * Le détourage est calculé image par image : sans mémoire, un contour hésitant
  * (cheveux, lunettes, main qui passe) scintille à chaque calcul. Ce lissage
- * exponentiel fige le contour sans retard perceptible quand on bouge la tête.
+ * exponentiel stabilise le contour tant que la silhouette ne bouge pas.
  */
-const MASK_SMOOTHING = 0.55
+const MASK_SMOOTHING_STILL = 0.35
+
+/**
+ * Part de la nouvelle mesure quand la silhouette bouge.
+ *
+ * Un lissage fixe à 55 % laissait, à chaque mouvement, un fantôme de l'ancienne
+ * silhouette mêlé à la nouvelle : le contour semblait très flou. Dès que le
+ * masque change nettement, la mesure fraîche prend presque toute la place.
+ */
+const MASK_SMOOTHING_MOVING = 0.95
+
+/** Variation moyenne d'alpha (0–1) au-delà de laquelle on parle de mouvement. */
+const MASK_MOTION_THRESHOLD = 0.03
+
+/**
+ * Nombre d'analyses vides tolérées avant d'admettre que la personne est sortie.
+ *
+ * Une analyse peut ne plus rien détecter pendant un mouvement rapide. Sans ce
+ * délai, le fond n'était plus composé et l'image brute de la pièce réapparaissait
+ * un dixième de seconde : le décor semblait « gommer » la personne.
+ */
+const MAX_HELD_MASKS = 4
 
 /**
  * Largeur maximale du calque « personne nette ».
- * Au-delà, la composition coûte plus cher que le gain de netteté apporté.
+ *
+ * Il valait la largeur du plan de travail (480 px) : le visage était réduit
+ * puis agrandi à chaque image, donc structurellement mou. Le calque est
+ * désormais à la résolution publiée.
  */
-const PERSON_MAX_WIDTH = 960
+const PERSON_MAX_WIDTH = 1280
 
 /** Largeur maximale du flux publié (une webcam 1440p est ramenée à 1280 px). */
 const MAX_FRAME_WIDTH = 1280
@@ -100,8 +131,12 @@ const MASK_LOW = 0.15
 const MASK_HIGH = 0.6
 
 /**
- * En dessous de cette couverture, aucun premier plan n'est détecté : l'image
- * est laissée **nette** plutôt que floutée intégralement.
+ * En dessous de cette couverture, aucun premier plan n'est détecté.
+ *
+ * Une analyse dans cet état n'est pas utilisée telle quelle : tant qu'un masque
+ * fiable existe, le dernier conservé est réutilisé (voir `MAX_HELD_MASKS`).
+ * Passé ce délai, la personne est considérée comme sortie du champ et seul le
+ * fond est publié — jamais l'image brute de la pièce.
  */
 const MIN_PERSON_COVERAGE = 0.005
 
@@ -178,13 +213,45 @@ export function maskSizeFor(
 export function smoothMask(
   previous: Uint8ClampedArray | null,
   next: Uint8ClampedArray,
-  weight = MASK_SMOOTHING,
+  weight = MASK_SMOOTHING_STILL,
 ): void {
   if (!previous || previous.length !== next.length) return
   const keep = 1 - weight
   for (let index = 3; index < next.length; index += 4) {
     next[index] = Math.round(previous[index] * keep + next[index] * weight)
   }
+}
+
+/**
+ * Mouvement apparent de la silhouette entre l'ancien masque et le nouveau.
+ *
+ * Renvoie la variation moyenne d'alpha (0–1). Le seuil de mouvement reste bas
+ * parce qu'une tête qui tourne ne modifie qu'une petite fraction des pixels :
+ * une moyenne plein cadre sous-estime largement le déplacement réel.
+ */
+export function maskMotion(
+  previous: Uint8ClampedArray | null,
+  next: Uint8ClampedArray,
+): number {
+  if (!previous || previous.length !== next.length) return 1
+
+  let total = 0
+  for (let index = 3; index < next.length; index += 4) {
+    total += Math.abs(next[index] - previous[index])
+  }
+
+  return total / (next.length / 4) / 255
+}
+
+/**
+ * Part de la nouvelle mesure dans le masque affiché.
+ *
+ * À l'arrêt : 35 %, le contour se stabilise. En mouvement : jusqu'à 95 %, il
+ * suit immédiatement et ne laisse plus de traînée derrière la tête.
+ */
+export function smoothingWeight(motion: number): number {
+  const ramp = Math.min(1, Math.max(0, motion / MASK_MOTION_THRESHOLD))
+  return MASK_SMOOTHING_STILL + (MASK_SMOOTHING_MOVING - MASK_SMOOTHING_STILL) * ramp
 }
 
 /**
@@ -472,6 +539,7 @@ export async function createBackgroundBlurRenderer(
   let segmenting = false
   let lastSegmentAt = 0
   let previousMask: Uint8ClampedArray | null = null
+  let heldMasks = 0
 
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -531,13 +599,27 @@ export async function createBackgroundBlurRenderer(
 
     const frame = maskCtx.getImageData(0, 0, mask.width, mask.height)
     const maskStats = applyPersonMask(frame.data)
-    personCoverage = maskStats.coverage
     maskRedMean = maskStats.redMean
     maskAlphaMean = maskStats.alphaMean
 
-    // Lissage temporel : le contour garde sa position d'une image à l'autre au
-    // lieu de scintiller. Le buffer précédent est recopié **après** le mélange.
-    smoothMask(previousMask, frame.data)
+    // Détection momentanément perdue (mouvement rapide, modèle incertain) : le
+    // dernier masque fiable est conservé. Composer avec un masque vide laisserait
+    // réapparaître la pièce réelle une fraction de seconde — c'est exactement le
+    // défaut observé. Après quelques analyses vides, la personne est considérée
+    // comme sortie du champ et seul le fond est publié.
+    if (maskStats.coverage < MIN_PERSON_COVERAGE && maskReady && heldMasks < MAX_HELD_MASKS) {
+      heldMasks += 1
+      masks += 1
+      masksInWindow += 1
+      sampleRates()
+      return
+    }
+
+    heldMasks = 0
+    personCoverage = maskStats.coverage
+
+    // Lissage adaptatif : stable à l'arrêt, quasi instantané en mouvement.
+    smoothMask(previousMask, frame.data, smoothingWeight(maskMotion(previousMask, frame.data)))
     previousMask = new Uint8ClampedArray(frame.data)
 
     maskCtx.putImageData(frame, 0, 0)
@@ -585,7 +667,10 @@ export async function createBackgroundBlurRenderer(
   const compose = () => {
     const target = canvas
     const context = ctx
-    if (!target || !context || !maskReady || personCoverage < MIN_PERSON_COVERAGE) return
+    // Sans premier masque, la caméra brute reste affichée le temps du
+    // détourage. Ensuite, on compose **toujours** : la pièce réelle ne doit
+    // jamais réapparaître entre deux analyses.
+    if (!target || !context || !maskReady) return
 
     // 1. Copie nette du premier plan, **avant** de repeindre le fond.
     personCtx.globalCompositeOperation = 'source-over'
@@ -729,7 +814,7 @@ export async function createBackgroundBlurRenderer(
       const workSize = normalizedWorkSize(size.width, size.height)
       work.width = workSize.width
       work.height = workSize.height
-      person.width = Math.min(workSize.width, PERSON_MAX_WIDTH)
+      person.width = Math.min(size.width, PERSON_MAX_WIDTH)
       person.height = Math.max(2, Math.round((person.width * size.height) / size.width))
       backdrop.width = Math.max(16, Math.round(workSize.width / BLUR_DIVISOR))
       backdrop.height = Math.max(16, Math.round(workSize.height / BLUR_DIVISOR))
@@ -740,6 +825,7 @@ export async function createBackgroundBlurRenderer(
       mask.height = maskSize.height
       maskReady = false
       previousMask = null
+      heldMasks = 0
       personCoverage = 0
 
       // Décor : toile à la taille du flux, peinte une seule fois.
