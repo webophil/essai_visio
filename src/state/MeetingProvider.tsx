@@ -10,7 +10,7 @@ import { fetchMeetingInfo } from '../meeting/rtkApi'
 import { describeSessionError } from '../meeting/rtkErrors'
 import { createTransport } from '../meeting/transport'
 import type { MeetingTransport } from '../meeting/transport'
-import { EMPTY_CHAT_STATE, emptySessionState } from '../types/meeting'
+import { EMPTY_CHAT_STATE, emptySessionState, NO_VIDEO_EFFECT } from '../types/meeting'
 import type {
   ChatState,
   MeetingSessionState,
@@ -18,7 +18,7 @@ import type {
   SessionPhase,
   SidePanelId,
   TransportState,
-  VideoEffectId,
+  VideoEffectChoice,
 } from '../types/meeting'
 import { MeetingContext } from './meetingContext'
 import type { MeetingContextValue } from './meetingContext'
@@ -29,6 +29,18 @@ const PARTICIPANT_NAME_KEY = 'phildev-visio:participant-name'
 interface MediaIntent {
   audio: boolean
   video: boolean
+}
+
+/**
+ * Libère une image de fond locale devenue inutile.
+ *
+ * Une URL d'objet (`blob:`) ne vaut que pour la page courante et retient le
+ * fichier en mémoire : elle est révoquée dès qu'une autre image la remplace.
+ */
+function releaseBackdrop(choice: VideoEffectChoice): void {
+  if (choice.backdrop?.kind !== 'image') return
+  if (!choice.backdrop.url.startsWith('blob:')) return
+  URL.revokeObjectURL(choice.backdrop.url)
 }
 
 function readStoredParticipantName(): string {
@@ -72,7 +84,7 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
   })
   const [session, setSession] = useState<MeetingSessionState>(() => emptySessionState(5))
   const [chat, setChatState] = useState<ChatState>(EMPTY_CHAT_STATE)
-  const [videoEffect, setVideoEffectState] = useState<VideoEffectId>('none')
+  const [videoEffect, setVideoEffectState] = useState<VideoEffectChoice>(NO_VIDEO_EFFECT)
   const [videoEffectBusy, setVideoEffectBusy] = useState(false)
   const [videoEffectError, setVideoEffectError] = useState<string | null>(null)
 
@@ -179,18 +191,18 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
 
       // L'effet choisi survit à l'entrée en salle : il est appliqué au flux
       // publié, jamais à une capture parallèle.
-      if (videoEffect !== 'none') {
+      if (videoEffect.id !== 'none') {
         try {
           await nextTransport.setVideoEffect(videoEffect, (message) => {
-            setVideoEffectState('none')
+            setVideoEffectState(NO_VIDEO_EFFECT)
             setVideoEffectError(message)
           })
         } catch (error) {
-          setVideoEffectState('none')
+          setVideoEffectState(NO_VIDEO_EFFECT)
           setVideoEffectError(
             error instanceof Error
               ? error.message
-              : "Le flou d'arrière-plan n'a pas pu être appliqué : votre caméra est diffusée sans effet.",
+              : "L'effet de fond n'a pas pu être appliqué : votre caméra est diffusée sans effet.",
           )
         }
       }
@@ -262,36 +274,56 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
     [transport],
   )
 
-  /** Active ou retire un effet vidéo local (flou d'arrière-plan). */
+  /** Active ou retire un effet de fond local (flou ou décor). */
   const setVideoEffect = useCallback(
-    async (effect: VideoEffectId) => {
+    async (choice: VideoEffectChoice) => {
       if (!transport) return
 
       setVideoEffectBusy(true)
       setVideoEffectError(null)
 
       try {
-        await transport.setVideoEffect(effect, (message) => {
+        await transport.setVideoEffect(choice, (message) => {
           // Le détourage s'est arrêté après avoir démarré : l'interface revient
           // explicitement à « Aucun effet » et explique pourquoi.
-          setVideoEffectState('none')
+          setVideoEffectState(NO_VIDEO_EFFECT)
           setVideoEffectError(message)
         })
-        setVideoEffectState(effect)
+
+        // L'ancienne image locale n'est libérée qu'une fois la nouvelle en
+        // place : un refus du navigateur ne laisse pas l'interface sans fond.
+        if (
+          videoEffect.backdrop?.kind === 'image' &&
+          (choice.backdrop?.kind !== 'image' || choice.backdrop.url !== videoEffect.backdrop.url)
+        ) {
+          releaseBackdrop(videoEffect)
+        }
+
+        setVideoEffectState(choice)
       } catch (error) {
         // L'effet est refusé : la caméra reste diffusée telle quelle et
         // l'interface revient explicitement à « Aucun effet ».
-        setVideoEffectState('none')
+        setVideoEffectState(NO_VIDEO_EFFECT)
         setVideoEffectError(
           error instanceof Error
             ? error.message
             : "L'effet n'a pas pu être appliqué : votre caméra reste diffusée sans traitement.",
         )
+
+        // Une image fraîchement importée qui n'a pas pu être appliquée n'est
+        // référencée nulle part : elle est libérée tout de suite.
+        if (
+          choice.backdrop?.kind === 'image' &&
+          choice.backdrop.url !==
+            (videoEffect.backdrop?.kind === 'image' ? videoEffect.backdrop.url : undefined)
+        ) {
+          releaseBackdrop(choice)
+        }
       } finally {
         setVideoEffectBusy(false)
       }
     },
-    [transport],
+    [transport, videoEffect],
   )
 
   const value: MeetingContextValue = {

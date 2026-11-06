@@ -9,7 +9,7 @@ import type {
   SessionPhase,
   SidePanelId,
   TransportState,
-  VideoEffectId,
+  VideoEffectChoice,
 } from '../types/meeting'
 
 export interface MeetingContextValue {
@@ -54,9 +54,9 @@ export interface MeetingContextValue {
   sendChatMessage: (text: string) => Promise<boolean>
 
   /** Effet vidéo local actif (aucun effet par défaut). */
-  videoEffect: VideoEffectId
+  videoEffect: VideoEffectChoice
   /** Active ou retire un effet vidéo ; l'échec est exposé par `videoEffectError`. */
-  setVideoEffect: (effect: VideoEffectId) => Promise<void>
+  setVideoEffect: (choice: VideoEffectChoice) => Promise<void>
   videoEffectBusy: boolean
   videoEffectError: string | null
 

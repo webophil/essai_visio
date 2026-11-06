@@ -30,9 +30,9 @@ export const NOTICES = {
 
   /** Effets de fond */
   backgroundEffects:
-    "Le flou s'applique à votre flux vidéo avant sa diffusion : seuls les participants voient le résultat, votre caméra locale n'est pas modifiée.",
+    "Le flou ou le décor s'applique à votre flux vidéo avant sa diffusion : seuls les participants voient le résultat, votre caméra locale n'est pas modifiée. Une image importée reste sur cet appareil.",
   backgroundBlurUnsupported:
-    "Si votre navigateur ne prend pas en charge ce traitement, le flou n'est pas activé : votre caméra reste diffusée normalement, sans effet et sans message d'erreur technique.",
+    "Si votre navigateur ne prend pas en charge le détourage, l'effet n'est pas activé : votre caméra reste diffusée normalement, sans effet et sans message d'erreur technique.",
 
   /** Matériel */
   deviceFallback:

@@ -27,7 +27,7 @@ projet de déploiement : elle change si le site est recréé.
 | Icônes | `lucide-react` |
 | Temps réel | `@cloudflare/realtimekit` 2.0.3 + `@cloudflare/realtimekit-react` 2.0.3 |
 | Médias | SDK RealtimeKit (`Client.initMedia`) — une seule capture des périphériques |
-| Effets vidéo | `addVideoMiddleware` du SDK + MediaPipe Selfie Segmentation (WebAssembly servi par l'application) |
+| Effets de fond | `addVideoMiddleware` du SDK + MediaPipe Selfie Segmentation (WebAssembly servi par l'application), flou et décors composés localement |
 | Routage | Routeur minimal interne (`src/lib/router.ts`, History API) |
 | Lint | Oxlint (`npm run lint`) |
 | Déploiement | FreeBuff Sites : Worker Cloudflare + assets statiques (voir « Déploiement ») |
@@ -50,7 +50,8 @@ Navigateur ──► Worker FreeBuff (/api/...)  ──► API Cloudflare Realti
 | `src/meeting/transport/RealtimeKitTransport.ts` | Seule frontière avec le SDK côté navigateur |
 | `src/media/useRtkMedia.ts` | Capture des périphériques par le SDK (écran de préparation) |
 | `src/media/remoteAudio.ts` | Sélection des pistes audio distantes à restituer (pure, testée) |
-| `src/media/backgroundBlur.ts` | Flou d'arrière-plan : détourage local puis composition du flux publié |
+| `src/media/backgroundBlur.ts` | Effets de fond : détourage local, flou ou décor, composition du flux publié |
+| `src/media/backdrops.ts` | Décors peints à la volée (teintes) : aucun fichier image livré |
 | `scripts/vendor-mediapipe.mjs` | Recopie le moteur de segmentation dans `public/vendor` (fichiers non versionnés) |
 | `src/lib/meetingTitle.ts` | Nom de réunion : valeur par défaut, longueur maximale, normalisation |
 | `src/components/meeting/RemoteAudio.tsx` | Sortie audio des participants distants (un `<audio>` par participant) |
@@ -129,18 +130,47 @@ Ces règles vivent dans `src/components/meeting/layout.ts` et sont vérifiées p
 `npm run test:smoke` (groupe « mise en page »), y compris le rendu réel du panneau de chat avec un
 message très long.
 
-## Flou d'arrière-plan
+## Effets de fond (flou et décors)
 
-Le SDK installé (2.0.3) **ne fournit aucun effet de flou natif** : il expose en revanche
+Le SDK installé (2.0.3) **ne fournit aucun effet de fond natif** : il expose en revanche
 `addVideoMiddleware`, qui confie chaque image de la caméra à un canevas avant publication. C'est ce
-point d'accroche qui est utilisé (`src/media/backgroundBlur.ts`) :
+point d'accroche qui est utilisé (`src/media/backgroundBlur.ts`), avec trois traitements :
+**aucun**, **flou**, **décor**.
 
 1. le détourage de la silhouette est calculé **sur l'appareil** par MediaPipe Selfie Segmentation
    (WebAssembly), servi depuis `public/vendor/mediapipe` — aucun CDN, aucun service externe ;
-2. chaque image publiée est composée du fond réduit puis agrandi (flou économique) et de la
+2. chaque image publiée est composée d'un fond — flouté, teinte peinte ou image importée — et de la
    silhouette nette découpée par le masque, contours adoucis ;
 3. la piste audio et le partage d'écran ne sont jamais touchés, et **aucune seconde capture** de la
    caméra n'est ouverte : le SDK reste propriétaire de la piste.
+
+### Décors disponibles
+
+Quatre décors sont **peints localement** (`src/media/backdrops.ts`) : *Studio* (mur chaud),
+*Ardoise* (bleu-gris), *Sable* (beige minéral) et *Nuit* (bleu profond). Ils sont composés d'un
+dégradé, d'un halo lumineux et d'un vignettage, à la taille exacte du flux : aucun fichier image
+n'est livré, ce qui évite d'ajouter plusieurs méga-octets à un artefact qui frôle la limite de
+10 Mio, et écarte tout problème de licence sur une photo de « salle de réunion ».
+
+Une **image personnelle** peut être importée depuis le disque (`PNG`, `JPEG`, `WebP`… jusqu'à 8 Mo).
+Elle est chargée par le navigateur sous forme d'URL d'objet, **n'est jamais téléversée**, n'est pas
+conservée après la réunion, et cadrée en « cover » (centrée puis rognée, jamais étirée). Elle est
+libérée dès qu'une autre image la remplace.
+
+### Qualité de l'image
+
+Trois réglages expliquent l'écart entre la première version et celle-ci :
+
+- **masque à 256 px de large** (contre 160) et **lissage temporel** : la nouvelle mesure ne pèse que
+  55 % du contour affiché, le reste vient de l'image précédente. Un contour qui hésite (cheveux,
+  lunettes, main qui passe) ne scintille plus, sans retard perceptible ;
+- **flou composé à l'agrandissement** : le fond est réduit d'un facteur 6 puis agrandi avec un
+  rayon de 5 px. Un simple redimensionnement bilinéaire laissait des blocs visibles sur un mur uni ;
+- **contour adouci sur 4 px** au lieu de 3, et composition à la résolution réelle de la piste
+  (plafonnée à 1280 px de large).
+
+Le détourage reste calculé à ~12 images/s : entre deux calculs, le dernier masque est réutilisé. Le
+coût reste borné sur une machine modeste, et le panneau affiche les compteurs réels.
 
 ### Géométrie du flux — cause d'un défaut corrigé
 
@@ -198,7 +228,7 @@ images recomposées, détourages calculés par seconde) et la **couverture de la
 Choix de conception :
 
 - **opt-in** — « Aucun effet » est l'état par défaut ;
-- détourage à ~14 images/s, masque réutilisé entre deux calculs, silhouette plafonnée à 960 px de
+- détourage à ~12 images/s, masque réutilisé entre deux calculs, silhouette plafonnée à 960 px de
   large : le coût reste borné sur une machine modeste ;
 - si le navigateur n'accepte pas les middlewares (WebKit ancien) ou si le moteur ne se charge pas,
   l'ajout échoue **explicitement** : l'interface revient à « Aucun effet », affiche un message, et
@@ -349,10 +379,9 @@ types, le lint, les tests ou l'artefact échouent.
 Le flou et le chat engagent du matériel et deux navigateurs : ces deux points se contrôlent à la
 main, depuis l'adresse de prévisualisation.
 
-> Depuis la PR #4, l'entrée « Effets » est retirée de la barre de contrôle
-> (`src/components/meeting/ControlBar.tsx`) : le moteur et son panneau restent dans le code, mais
-> les étapes 7 à 10 bis ci-dessous décrivent une fonctionnalité **non exposée** aujourd'hui, à
-> réactiver avant de les rejouer.
+> L'entrée « Effets » est de nouveau exposée dans la barre de contrôle
+> (`src/components/meeting/ControlBar.tsx`) : les étapes 7 à 10 bis ci-dessous s'appliquent à
+> nouveau, avec en plus les décors peints et l'import d'image locale.
 
 | Étape | Attendu |
 | --- | --- |
@@ -362,7 +391,8 @@ main, depuis l'adresse de prévisualisation.
 | 4. Vidéo : activer puis couper la caméra de chaque côté | Les vignettes suivent l'état réel, la voix continue de passer |
 | 5. Partage d'écran depuis un PC | L'écran occupe la scène, les caméras passent en vignettes, le son du partage est audible |
 | 6. Chat : un message depuis chaque PC | Message affiché avec auteur et heure des deux côtés ; si le preset interdit l'écrit, le panneau l'explique au lieu d'échouer |
-| 7. Effets : « Flou » sur un PC | Le panneau affiche des compteurs non nuls (≈ 20 images/s reçues, ≈ 14 détourages/s) et une silhouette détectée entre 10 % et 70 % ; **visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant** ; le retour à « Aucun effet » rétablit l'image d'origine |
+| 7. Effets : « Flou » sur un PC | Le panneau affiche des compteurs non nuls (≈ 20 images/s reçues, ≈ 12 détourages/s) et une silhouette détectée entre 10 % et 70 % ; **visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant**, sans contour qui scintille quand vous bougez la tête ; le retour à « Aucun effet » rétablit l'image d'origine |
+| 7 bis. Effets : « Studio », puis « Nuit », puis une **image importée** | Le fond change en une à deux secondes, la silhouette reste nette et ses bords ne bavent pas sur le décor ; une image portrait est rognée et centrée, jamais étirée ; « Retirer » revient à la caméra d'origine |
 | 8. Effets sur un navigateur WebKit ancien ou sans WebAssembly SIMD | Message d'échec explicite, caméra normale conservée, aucun écran noir |
 | 9. En pleine réunion, basculer « Aucun effet » → « Flou » → « Aucun effet » | Le changement s'applique en une à deux secondes, sans couper la voix ; les compteurs repartent à chaque activation, l'image d'origine revient au retrait |
 | 10. Ouvrir « Participants », « Chat » puis « Effets » ; envoyer un message de 500 caractères sans espace | La taille des vidéos ne change pas, le panneau défile seul, le message passe à la ligne ; à 2, 3, 4 puis 5 participants la grille reste équilibrée et les images ne sont pas déformées |

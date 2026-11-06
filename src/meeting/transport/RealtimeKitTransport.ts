@@ -11,7 +11,7 @@ import type {
   TransportState,
 } from '../../types/meeting'
 import { applyVideoEffect } from '../../media/backgroundBlur'
-import type { VideoEffectId } from '../../types/meeting'
+import type { VideoEffectChoice } from '../../types/meeting'
 import { getOrCreateGuestId } from '../hostSession'
 import { MeetingApiError, requestParticipantToken } from '../rtkApi'
 import type { ParticipantRole } from '../rtkApi'
@@ -287,12 +287,12 @@ export class RealtimeKitTransport implements MeetingTransport {
    * d'écran, ni les flux des autres participants.
    */
   async setVideoEffect(
-    effect: VideoEffectId,
+    choice: VideoEffectChoice,
     onRuntimeFailure?: (message: string) => void,
   ): Promise<void> {
     const self = this.client?.self
     if (!self) return
-    await applyVideoEffect(self, effect, onRuntimeFailure)
+    await applyVideoEffect(self, choice, onRuntimeFailure)
   }
 
   // -------------------------------------------------------------------------

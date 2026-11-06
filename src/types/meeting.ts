@@ -84,11 +84,33 @@ export interface ScreenShareState {
 }
 
 /**
- * Effet appliqué à la caméra locale **avant diffusion**.
- * `none` diffuse le flux tel quel ; `blur` détoure la silhouette et floute le
- * fond (traitement local, aucun service externe).
+ * Traitement appliqué à la caméra locale **avant diffusion**.
+ *
+ * - `none` diffuse le flux tel quel ;
+ * - `blur` détoure la silhouette et floute le fond ;
+ * - `backdrop` remplace le fond par un décor (teinte peinte ou image importée).
+ *
+ * Dans les trois cas, le détourage est calculé localement : aucun service
+ * externe ne voit l'image, et seuls les participants voient le résultat.
  */
-export type VideoEffectId = 'none' | 'blur'
+export type VideoEffectId = 'none' | 'blur' | 'backdrop'
+
+/** Décors synthétiques proposés sans aucun fichier image à embarquer. */
+export type BackdropPresetId = 'studio' | 'ardoise' | 'sable' | 'nuit'
+
+/** Fond de remplacement, dans l'un des deux modes réellement rendus. */
+export type VideoBackdrop =
+  | { readonly kind: 'preset'; readonly preset: BackdropPresetId }
+  | { readonly kind: 'image'; readonly url: string }
+
+/** Choix complet d'effet : l'identifiant et, pour un décor, son fond. */
+export interface VideoEffectChoice {
+  readonly id: VideoEffectId
+  readonly backdrop?: VideoBackdrop
+}
+
+/** État par défaut : le flux de la caméra part inchangé. */
+export const NO_VIDEO_EFFECT: VideoEffectChoice = { id: 'none' }
 
 /** Message du chat de réunion, tel qu'affiché dans le panneau. */
 export interface ChatMessageView {

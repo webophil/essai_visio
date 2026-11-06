@@ -1,7 +1,12 @@
 import type RTKClient from '@cloudflare/realtimekit'
 import type { RTKSelfMedia } from '@cloudflare/realtimekit'
 
-import type { ChatState, MeetingSessionState, TransportState, VideoEffectId } from '../../types/meeting'
+import type {
+  ChatState,
+  MeetingSessionState,
+  TransportState,
+  VideoEffectChoice,
+} from '../../types/meeting'
 
 /**
  * Frontière d'intégration vers l'infrastructure temps réel.
@@ -78,7 +83,7 @@ export interface MeetingTransport {
    * `onRuntimeFailure` est appelé si l'effet s'arrête après avoir démarré.
    */
   setVideoEffect(
-    effect: VideoEffectId,
+    choice: VideoEffectChoice,
     onRuntimeFailure?: (message: string) => void,
   ): Promise<void>
 }

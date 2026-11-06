@@ -1,16 +1,18 @@
 import type { RTKSelfMedia, VideoMiddleware } from '@cloudflare/realtimekit'
 
-import type { VideoEffectId } from '../types/meeting'
+import type { VideoEffectChoice } from '../types/meeting'
+import { paintBackdrop } from './backdrops'
 
 /**
- * Flou d'arrière-plan — traitement **entièrement local**.
+ * Effets de fond (flou et décors) — traitement **entièrement local**.
  *
- * Le SDK RealtimeKit n'expose pas d'effet de flou natif : il fournit un point
+ * Le SDK RealtimeKit n'expose aucun effet de fond natif : il fournit un point
  * d'accroche, `addVideoMiddleware`. Ce module s'appuie dessus :
  *
  * 1. un détourage de la silhouette est calculé localement par MediaPipe Selfie
  *    Segmentation (WebAssembly servi par l'application, aucun service externe) ;
- * 2. l'image publiée est composée du fond flouté et de la silhouette nette.
+ * 2. l'image publiée est composée d'un fond — flouté, teinte peinte ou image
+ *    importée — et de la silhouette nette.
  *
  * **Le rendu est piloté ici, pas par le SDK.** La raison est mesurable : le
  * pipeline interne du SDK dimensionne son canvas avec la largeur de l'élément
@@ -45,19 +47,44 @@ export const BLUR_ENGINE_SCRIPT_URL = `${ENGINE_PATH}/selfie_segmentation.js`
 const FRAME_INTERVAL_MS = 50
 
 /** Fréquence du détourage : entre deux calculs, le dernier masque est réutilisé. */
-const SEGMENT_INTERVAL_MS = 70
+const SEGMENT_INTERVAL_MS = 80
 
 /** Largeur du plan de travail : inutile de segmenter en pleine résolution. */
 const WORK_WIDTH = 480
 
-/** Résolution du masque : un contour flou n'a pas besoin de plus. */
-const MASK_WIDTH = 160
+/**
+ * Résolution du masque.
+ *
+ * À 160 px de large, une mèche de cheveux ou un avant-bras tenait sur deux
+ * pixels : le contour « bouillait » d'une image à l'autre. 256 px stabilisent
+ * la silhouette sans alourdir le détourage, qui travaille de toute façon sur
+ * son propre plan interne.
+ */
+const MASK_WIDTH = 256
 
 /** Diviseur appliqué au fond avant agrandissement (flou économique). */
-const BLUR_DIVISOR = 8
+const BLUR_DIVISOR = 6
+
+/**
+ * Rayon de lissage appliqué en agrandissant le fond réduit.
+ *
+ * Un agrandissement bilinéaire seul laisse des blocs visibles sur les aplats
+ * (un mur uni devient une mosaïque). Ce flou-là efface les blocs sans coûter
+ * un passage plein cadre sur la vidéo.
+ */
+const BACKDROP_BLUR_PX = 5
 
 /** Rayon d'adoucissement du contour de la silhouette, en pixels. */
-const FEATHER_PX = 3
+const FEATHER_PX = 4
+
+/**
+ * Part de la nouvelle mesure dans le masque affiché.
+ *
+ * Le détourage est calculé image par image : sans mémoire, un contour hésitant
+ * (cheveux, lunettes, main qui passe) scintille à chaque calcul. Ce lissage
+ * exponentiel fige le contour sans retard perceptible quand on bouge la tête.
+ */
+const MASK_SMOOTHING = 0.55
 
 /**
  * Largeur maximale du calque « personne nette ».
@@ -138,6 +165,50 @@ export function maskSizeFor(
     width: maskWidth,
     height: Math.max(1, Math.round((maskWidth * frameHeight) / frameWidth)),
   }
+}
+
+/**
+ * Mélange le nouveau masque au précédent, **sur place**.
+ *
+ * Seul le canal alpha est lissé : c'est lui qui porte l'opacité du premier plan
+ * après `applyPersonMask`. Un masque précédent de taille différente est ignoré
+ * (rotation de caméra, changement de géométrie) : mieux vaut aucun lissage
+ * qu'un contour décalé.
+ */
+export function smoothMask(
+  previous: Uint8ClampedArray | null,
+  next: Uint8ClampedArray,
+  weight = MASK_SMOOTHING,
+): void {
+  if (!previous || previous.length !== next.length) return
+  const keep = 1 - weight
+  for (let index = 3; index < next.length; index += 4) {
+    next[index] = Math.round(previous[index] * keep + next[index] * weight)
+  }
+}
+
+/**
+ * Rectangle de cadrage « cover » : remplit la cible sans déformer la source.
+ *
+ * Une image importée peut être en 4:3, en 3:2 ou en portrait ; elle est centrée
+ * et rognée plutôt qu'étirée. Les valeurs peuvent être négatives (débord
+ * centré), ce que `drawImage` accepte.
+ */
+export function fitCoverRect(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+    return { x: 0, y: 0, width: targetWidth, height: targetHeight }
+  }
+
+  const scale = Math.max(targetWidth / sourceWidth, targetHeight / sourceHeight)
+  const width = sourceWidth * scale
+  const height = sourceHeight * scale
+
+  return { x: (targetWidth - width) / 2, y: (targetHeight - height) / 2, width, height }
 }
 
 /**
@@ -345,8 +416,36 @@ function loadEngine(): Promise<SegmentationEngineConstructor> {
  * calculé sur une image locale. Si le WebAssembly, le graphe ou le modèle ne
  * répondent pas, l'appel échoue ici — donc visiblement.
  */
-export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRenderer> {
+/**
+ * Décode l'image de fond **avant** d'ajouter le middleware.
+ *
+ * Un fichier corrompu, un format que le navigateur ne décode pas ou un objet
+ * révoqué échouent ici, avec un message explicite — plutôt qu'en silence dans
+ * la boucle de composition, où l'image disparaîtrait sans explication.
+ */
+async function loadBackdropImage(url: string): Promise<HTMLImageElement> {
+  const element = new Image()
+  element.decoding = 'async'
+  element.src = url
+
+  try {
+    await element.decode()
+  } catch {
+    throw new VideoEffectError(
+      "L'image de fond n'a pas pu être lue par le navigateur. Choisissez une autre image : votre caméra reste diffusée sans effet.",
+    )
+  }
+
+  return element
+}
+
+export async function createBackgroundBlurRenderer(
+  effect: VideoEffectChoice,
+): Promise<BackgroundBlurRenderer> {
   const Engine = await loadEngine()
+
+  const backdropImage =
+    effect.backdrop?.kind === 'image' ? await loadBackdropImage(effect.backdrop.url) : null
 
   const work = document.createElement('canvas')
   const workCtx = work.getContext('2d')
@@ -356,8 +455,11 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
   const backdropCtx = backdrop.getContext('2d')
   const mask = document.createElement('canvas')
   const maskCtx = mask.getContext('2d', { willReadFrequently: true })
+  // Toile du décor : peinte une fois par activation, puis recopiée telle quelle.
+  const scene = document.createElement('canvas')
+  const sceneCtx = scene.getContext('2d')
 
-  if (!workCtx || !personCtx || !backdropCtx || !maskCtx) {
+  if (!workCtx || !personCtx || !backdropCtx || !maskCtx || !sceneCtx) {
     throw new VideoEffectError("Le flou d'arrière-plan n'est pas disponible sur ce navigateur.")
   }
 
@@ -369,6 +471,7 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
   let maskReady = false
   let segmenting = false
   let lastSegmentAt = 0
+  let previousMask: Uint8ClampedArray | null = null
 
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
@@ -426,19 +529,59 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
     maskCtx.clearRect(0, 0, mask.width, mask.height)
     maskCtx.drawImage(segmentationMask, 0, 0, mask.width, mask.height)
 
-    const image = maskCtx.getImageData(0, 0, mask.width, mask.height)
-    const maskStats = applyPersonMask(image.data)
+    const frame = maskCtx.getImageData(0, 0, mask.width, mask.height)
+    const maskStats = applyPersonMask(frame.data)
     personCoverage = maskStats.coverage
     maskRedMean = maskStats.redMean
     maskAlphaMean = maskStats.alphaMean
-    maskCtx.putImageData(image, 0, 0)
+
+    // Lissage temporel : le contour garde sa position d'une image à l'autre au
+    // lieu de scintiller. Le buffer précédent est recopié **après** le mélange.
+    smoothMask(previousMask, frame.data)
+    previousMask = new Uint8ClampedArray(frame.data)
+
+    maskCtx.putImageData(frame, 0, 0)
     maskReady = true
     masks += 1
     masksInWindow += 1
     sampleRates()
   })
 
-  /** Compose une image : fond flouté + silhouette nette. */
+  /**
+   * Peint le fond sous la silhouette.
+   *
+   * - **flou** : réduction puis agrandissement lissé. Le flou est appliqué au
+   *   moment de l'agrandissement, ce qui efface les blocs que laissait un
+   *   simple redimensionnement sur un mur uni ;
+   * - **décor** : toile peinte une fois à la taille du flux, puis recopiée ;
+   *   aucun coût de dessin par image ;
+   * - **image importée** : cadrage « cover », jamais étirée.
+   */
+  const paintBackground = () => {
+    const target = canvas
+    const context = ctx
+    if (!target || !context) return
+
+    if (effect.id === 'backdrop') {
+      context.save()
+      context.drawImage(scene, 0, 0, target.width, target.height)
+      context.restore()
+      return
+    }
+
+    backdropCtx.imageSmoothingEnabled = true
+    backdropCtx.imageSmoothingQuality = 'high'
+    backdropCtx.drawImage(target, 0, 0, backdrop.width, backdrop.height)
+
+    context.save()
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = 'high'
+    context.filter = `blur(${BACKDROP_BLUR_PX}px)`
+    context.drawImage(backdrop, 0, 0, target.width, target.height)
+    context.restore()
+  }
+
+  /** Compose une image : fond (flou ou décor) + silhouette nette. */
   const compose = () => {
     const target = canvas
     const context = ctx
@@ -449,16 +592,8 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
     personCtx.clearRect(0, 0, person.width, person.height)
     personCtx.drawImage(target, 0, 0, person.width, person.height)
 
-    // 2. Fond : réduction puis agrandissement lissé.
-    backdropCtx.imageSmoothingEnabled = true
-    backdropCtx.imageSmoothingQuality = 'high'
-    backdropCtx.drawImage(target, 0, 0, backdrop.width, backdrop.height)
-
-    context.save()
-    context.imageSmoothingEnabled = true
-    context.imageSmoothingQuality = 'high'
-    context.drawImage(backdrop, 0, 0, target.width, target.height)
-    context.restore()
+    // 2. Fond : flou calculé ou décor peint.
+    paintBackground()
 
     // 3. Silhouette nette, découpée par le masque (même rapport d'image).
     personCtx.globalCompositeOperation = 'destination-in'
@@ -539,6 +674,33 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
     }
   }
 
+  /** Peint la toile du décor à la taille courante du flux. */
+  const paintScene = () => {
+    if (effect.id !== 'backdrop') return
+
+    sceneCtx.clearRect(0, 0, scene.width, scene.height)
+    sceneCtx.imageSmoothingEnabled = true
+    sceneCtx.imageSmoothingQuality = 'high'
+
+    if (effect.backdrop?.kind === 'image' && backdropImage) {
+      const rect = fitCoverRect(
+        backdropImage.naturalWidth,
+        backdropImage.naturalHeight,
+        scene.width,
+        scene.height,
+      )
+      sceneCtx.drawImage(backdropImage, rect.x, rect.y, rect.width, rect.height)
+      return
+    }
+
+    paintBackdrop(
+      sceneCtx,
+      scene.width,
+      scene.height,
+      effect.backdrop?.kind === 'preset' ? effect.backdrop.preset : 'ardoise',
+    )
+  }
+
   const renderer: BackgroundBlurRenderer = {
     attach: async (targetCanvas, track) => {
       detach()
@@ -577,7 +739,13 @@ export async function createBackgroundBlurRenderer(): Promise<BackgroundBlurRend
       mask.width = maskSize.width
       mask.height = maskSize.height
       maskReady = false
+      previousMask = null
       personCoverage = 0
+
+      // Décor : toile à la taille du flux, peinte une seule fois.
+      scene.width = size.width
+      scene.height = size.height
+      paintScene()
 
       const element = document.createElement('video')
       element.muted = true
@@ -727,12 +895,12 @@ async function waitForFirstFrame(renderer: BackgroundBlurRenderer): Promise<bool
 }
 
 /** Fabrique de rendu, injectable pour les tests de non-régression. */
-export type BlurRendererFactory = () => Promise<BackgroundBlurRenderer>
+export type BlurRendererFactory = (effect: VideoEffectChoice) => Promise<BackgroundBlurRenderer>
 
 /** Applique (ou retire) l'effet vidéo sur le support média du SDK. */
 export async function applyVideoEffect(
   media: EffectMedia,
-  effect: VideoEffectId,
+  effect: VideoEffectChoice,
   onRuntimeFailure?: (message: string) => void,
 ): Promise<void> {
   return applyVideoEffectWith(media, effect, createBackgroundBlurRenderer, onRuntimeFailure)
@@ -746,11 +914,11 @@ export async function applyVideoEffect(
  */
 export async function applyVideoEffectWith(
   media: EffectMedia,
-  effect: VideoEffectId,
+  effect: VideoEffectChoice,
   createRenderer: BlurRendererFactory,
   onRuntimeFailure?: (message: string) => void,
 ): Promise<void> {
-  if (effect === 'none') {
+  if (effect.id === 'none') {
     await media.removeVideoMiddleware(blurMiddleware)
     activeRenderer?.dispose()
     activeRenderer = null
@@ -761,7 +929,7 @@ export async function applyVideoEffectWith(
   // Effet déjà en place : rien à refaire (le SDK refuserait le doublon).
   if (activeRenderer) return
 
-  const renderer = await createRenderer()
+  const renderer = await createRenderer(effect)
 
   renderer.onFailure = (message) => {
     if (activeRenderer === renderer) activeRenderer = null

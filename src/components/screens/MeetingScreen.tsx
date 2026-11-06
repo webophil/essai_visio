@@ -2,6 +2,7 @@ import { RealtimeKitProvider } from '@cloudflare/realtimekit-react'
 import { Clock, Crown, Loader2, Users, Wifi, WifiOff } from 'lucide-react'
 
 import { PhilDevLogo } from '../Brand/PhilDevLogo'
+import { BackgroundEffectsPanel } from '../meeting/BackgroundEffectsPanel'
 import { ChatPanel } from '../meeting/ChatPanel'
 import { ControlBar } from '../meeting/ControlBar'
 import { InviteLinkButton } from '../meeting/InviteLinkButton'
@@ -148,8 +149,7 @@ function MeetingLayout() {
 
         {activePanel === 'participants' ? <ParticipantsPanel /> : null}
         {activePanel === 'chat' ? <ChatPanel /> : null}
-        {/* Panneau « Effets » provisoirement masqué : le composant et le moteur
-            de flou restent en place, seule son ouverture est retirée. */}
+        {activePanel === 'effects' ? <BackgroundEffectsPanel /> : null}
       </main>
 
       {activePanel ? (

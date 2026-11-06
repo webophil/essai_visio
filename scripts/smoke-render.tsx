@@ -42,13 +42,16 @@ import {
   applyPersonMask,
   applyVideoEffect,
   applyVideoEffectWith,
+  fitCoverRect,
   maskOpacity,
   maskSizeFor,
   maskValueForPixel,
   normalizedFrameSize,
   normalizedWorkSize,
   readVideoEffectStats,
+  smoothMask,
 } from '../src/media/backgroundBlur'
+import { BACKDROP_PRESETS, backdropPreset } from '../src/media/backdrops'
 import { DEFAULT_MEETING_TITLE, MAX_MEETING_TITLE_LENGTH, normalizeMeetingTitle } from '../src/lib/meetingTitle'
 import { MeetingApiError } from '../src/meeting/rtkApi'
 import { describeChatError, describeSessionError } from '../src/meeting/rtkErrors'
@@ -216,9 +219,9 @@ checks.push({
 
     // Le masque suit le rapport d'image de la vidéo, jamais un 16:9 figé.
     const wideMask = maskSizeFor(1280, 720)
-    expect(wideMask.width === 160 && wideMask.height === 90, 'masque 16:9 pour une vidéo 16:9')
+    expect(wideMask.width === 256 && wideMask.height === 144, 'masque 16:9 pour une vidéo 16:9')
     const squareMask = maskSizeFor(1000, 1000)
-    expect(squareMask.width === 160 && squareMask.height === 160, 'masque carré pour une vidéo carrée')
+    expect(squareMask.width === 256 && squareMask.height === 256, 'masque carré pour une vidéo carrée')
 
     // Le moteur doit être servi par l'application : jamais un CDN.
     expect(
@@ -301,6 +304,54 @@ checks.push({
   },
 })
 
+// --- Décors et lissage du masque -----------------------------------------
+checks.push({
+  name: 'décors et lissage',
+  run: () => {
+    // Décors peints : aucun fichier image livré, donc rien à télécharger ni à
+    // licencier pour une photo de « salle de réunion ».
+    expect(BACKDROP_PRESETS.length === 4, 'quatre décors proposés')
+    expect(new Set(BACKDROP_PRESETS.map((preset) => preset.id)).size === 4, 'identifiants uniques')
+    expect(
+      BACKDROP_PRESETS.every(
+        (preset) => preset.label.length > 0 && preset.swatch.includes('gradient'),
+      ),
+      'chaque décor a un libellé et un aperçu fidèle',
+    )
+    expect(backdropPreset('nuit').id === 'nuit', 'décor retrouvé par son identifiant')
+    expect(
+      backdropPreset('inconnu' as never).id === 'studio',
+      'identifiant inconnu → repli sans erreur',
+    )
+
+    // Cadrage « cover » d'une image importée : remplit sans déformer.
+    const same = fitCoverRect(1920, 1080, 1280, 720)
+    expect(
+      same.x === 0 && same.y === 0 && same.width === 1280 && same.height === 720,
+      'même rapport → aucun rognage',
+    )
+    const portrait = fitCoverRect(1080, 1920, 1280, 720)
+    expect(Math.abs(portrait.width - 1280) < 0.001, 'image portrait étirée à la largeur')
+    expect(portrait.height > 720 && portrait.y < 0, 'débord vertical rogné, pas écrasé')
+    expect(Math.abs(portrait.y * 2 + portrait.height - 720) < 0.001, 'rognage centré')
+    expect(fitCoverRect(0, 0, 1280, 720).width === 1280, 'taille inconnue → cadre complet')
+
+    // Lissage temporel : le contour ne doit plus scintiller d'une image à l'autre.
+    const previous = new Uint8ClampedArray(2 * 4)
+    previous[3] = 200
+    const next = new Uint8ClampedArray(2 * 4)
+    next[3] = 100
+    smoothMask(previous, next, 0.5)
+    expect(next[3] === 150, 'masque mélangé au précédent')
+    expect(next[7] === 0, 'fond lissé reste transparent')
+
+    const untouched = new Uint8ClampedArray(8)
+    untouched[3] = 90
+    smoothMask(new Uint8ClampedArray(4), untouched, 0.5)
+    expect(untouched[3] === 90, 'taille différente → aucun mélange (masque intact)')
+  },
+})
+
 // --- Application de l'effet vidéo ----------------------------------------
 checks.push({
   name: 'application du flou',
@@ -365,7 +416,7 @@ checks.push({
     const silent = createFakeMedia(true)
     let rejection: unknown = null
     try {
-      await applyVideoEffectWith(silent.media, 'blur', createFakeRenderer)
+      await applyVideoEffectWith(silent.media, { id: 'blur' }, createFakeRenderer)
     } catch (error) {
       rejection = error
     }
@@ -379,13 +430,13 @@ checks.push({
     expect(readVideoEffectStats() === null, 'aucun rendu fantôme conservé')
 
     const working = createFakeMedia(false)
-    await applyVideoEffectWith(working.media, 'blur', createFakeRenderer)
+    await applyVideoEffectWith(working.media, { id: 'blur' }, createFakeRenderer)
     expect(readVideoEffectStats()?.imagesBlurred === 3, 'compteurs de traitement exposés')
     expect(
       working.ownsCanvas(),
       'le canvas est piloté par le traitement (géométrie de la piste)',
     )
-    await applyVideoEffect(working.media, 'none')
+    await applyVideoEffect(working.media, { id: 'none' })
     expect(readVideoEffectStats() === null, '« Aucun effet » libère le traitement')
     expect(working.removals() === 1, 'middleware retiré explicitement')
   },
@@ -908,7 +959,7 @@ checks.push({
       removeListener: () => {},
     })
 
-    const renderRoom = (remoteCount: number) => {
+    const renderRoom = (remoteCount: number, panel: 'effects' | null = null) => {
       const remotes = Array.from({ length: remoteCount }, (_, index) => remote(index + 1))
       const roomClient = {
         self: {
@@ -928,7 +979,7 @@ checks.push({
         meetingName: 'Rendez-vous Aurore',
         realtimeKitId: UUID,
         durationMs: 3_725_000,
-        activePanel: null,
+        activePanel: panel,
         session: {
           participants: [{ id: 'self' }, ...remotes.map((participant) => ({ id: participant.id }))],
           error: null,
@@ -942,6 +993,11 @@ checks.push({
         setMicrophoneEnabled: async () => {},
         setCameraEnabled: async () => {},
         client: roomClient,
+        media: { hasVideoTrack: true, videoEnabled: true },
+        videoEffect: { id: 'none' },
+        setVideoEffect: async () => {},
+        videoEffectBusy: false,
+        videoEffectError: null,
       } as unknown as MeetingContextValue
 
       return renderToStaticMarkup(
@@ -968,7 +1024,7 @@ checks.push({
       expect(!waiting.includes('cinq personnes'), 'aucune limite de participants dans le pied de page')
       expect(!waiting.includes('contrôle est effectué côté serveur'), 'aucune explication de contrôle serveur')
       expect(!waiting.includes('Cloudflare'), 'aucune mention technique dans la salle')
-      expect(!waiting.includes('Effets'), 'bouton « Effets » masqué')
+      expect(waiting.includes('Effets'), 'bouton « Effets » exposé')
       expect(waiting.includes('En attente des participants'), 'bandeau d’attente simplifié')
       expect(
         waiting.includes('Partagez le lien de réunion pour les inviter.'),
@@ -977,6 +1033,16 @@ checks.push({
 
       const joined = renderRoom(1)
       expect(!joined.includes('En attente des participants'), 'le bandeau disparaît dès qu’un invité rejoint')
+
+      // Le panneau des effets doit être atteignable et proposer les trois
+      // traitements réellement rendus : aucun, flou, décor.
+      const effects = renderRoom(1, 'effects')
+      expect(effects.includes('Effets de fond'), 'panneau des effets ouvert')
+      expect(effects.includes('Aucun effet') && effects.includes('Flou'), 'flou et image d’origine proposés')
+      expect(effects.includes('Studio') && effects.includes('Nuit'), 'décors peints proposés')
+      expect(effects.includes('Importer une image'), 'import d’image locale proposé')
+      expect(effects.includes('Traitement local'), 'traitement local expliqué')
+      expect(!effects.includes('Image personnelle active'), 'aucune image annoncée sans import')
     } finally {
       if (previousWindow === undefined) delete scope.window
       else scope.window = previousWindow
