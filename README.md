@@ -162,9 +162,11 @@ visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux
 slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
 n'a jamais été inversé.
 
-Le même choix est proposé **avant de rejoindre**, sur l'écran de préparation : le flou ou le décor
-retenu est mémorisé puis appliqué dès l'entrée en salle. L'aperçu de préparation, lui, montre la
-caméra brute — le traitement n'existe qu'une fois le flux publié.
+Le même choix est proposé **avant de rejoindre**, sur l'écran de préparation, et il y est
+**visible en direct**. L'aperçu ne dispose d'aucun transport : une seconde instance du moteur
+compose les images de la piste de préparation dans un canvas dédié, sans toucher à la piste du SDK.
+Le choix est mémorisé puis appliqué au flux publié à l'entrée en salle, où le rendu de réunion
+prend le relais ; l'aperçu n'altère jamais la piste réellement publiée.
 
 ### Qualité de l'image
 
@@ -404,7 +406,7 @@ main, depuis l'adresse de prévisualisation.
 | 4. Vidéo : activer puis couper la caméra de chaque côté | Les vignettes suivent l'état réel, la voix continue de passer |
 | 5. Partage d'écran depuis un PC | L'écran occupe la scène, les caméras passent en vignettes, le son du partage est audible |
 | 6. Chat : un message depuis chaque PC | Message affiché avec auteur et heure des deux côtés ; si le preset interdit l'écrit, le panneau l'explique au lieu d'échouer |
-| 6 bis. Sur l'écran « Rejoindre », choisir « Flou » puis « Ardoise », puis entrer | L'aperçu de préparation reste la caméra brute ; dès l'entrée, le flux publié porte l'effet choisi, chez vous comme chez l'autre participant |
+| 6 bis. Sur l'écran « Rejoindre », choisir « Flou » puis « Ardoise », puis entrer | L'aperçu de préparation montre immédiatement le flou ou le décor, sans miroir ; dès l'entrée, le flux publié porte le même effet, chez vous comme chez l'autre participant |
 | 7. Effets : « Flou » sur un PC | **Visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant**, sans contour qui scintille quand vous bougez la tête ; le retour à « Aucun effet » rétablit l'image d'origine |
 | 7 bis. Effets : « Studio », puis « Ardoise », puis une **image importée** | Le fond change en une à deux secondes, la silhouette reste nette et ses bords ne bavent pas sur le décor ; une image portrait est rognée et centrée, jamais étirée ; « Retirer » revient à la caméra d'origine |
 | 8. Effets sur un navigateur WebKit ancien ou sans WebAssembly SIMD | Message d'échec explicite, caméra normale conservée, aucun écran noir |

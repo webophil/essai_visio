@@ -24,8 +24,10 @@ import { InviteByEmailPanel } from '../meeting/InviteByEmailPanel'
 import { BackgroundEffectPicker } from '../meeting/BackgroundEffectsPanel'
 import { VideoPlaceholder, VideoSurface } from '../meeting/VideoSurface'
 import { useMeeting } from '../../state/meetingContext'
+import { usePreviewEffect } from '../../media/usePreviewEffect'
 import { NOTICES } from '../../lib/notices'
 import { mediaDevicesSupported } from '../../lib/mediaErrors'
+import { cn } from '../../lib/cn'
 
 export interface PreJoinScreenProps {
   onBack: () => void
@@ -51,10 +53,17 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
     toggleAudio,
     toggleVideo,
     isHost,
+    videoEffect,
   } = useMeeting()
 
   const [nameError, setNameError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [previewCanvas, setPreviewCanvas] = useState<HTMLCanvasElement | null>(null)
+
+  // Aperçu local du décor : même moteur que la salle, sur un canvas distinct.
+  const previewTrack = media.stream?.getVideoTracks()[0] ?? null
+  const preview = usePreviewEffect(previewCanvas, previewTrack, videoEffect)
+  const previewVisible = videoEffect.id !== 'none' && preview.ready
 
   const supportsMedia = mediaDevicesSupported()
   const hasVideo = media.hasVideoTrack && media.videoEnabled
@@ -174,7 +183,9 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
             <VideoSurface
               stream={media.stream}
               active={hasVideo}
-              mirrored
+              /* Avec un effet, l'aperçu composé n'est pas inversé : le décor
+                 reste lisible, comme dans la salle. */
+              mirrored={videoEffect.id === 'none'}
               label="Aperçu de votre caméra"
               className="aspect-video w-full rounded-2xl border border-ink-700"
               placeholder={
@@ -190,6 +201,24 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
                 />
               }
             >
+              <canvas
+                ref={setPreviewCanvas}
+                aria-hidden="true"
+                className={cn(
+                  'absolute inset-0 size-full bg-ink-950 object-contain',
+                  previewVisible ? '' : 'hidden',
+                )}
+              />
+
+              {videoEffect.id !== 'none' && preview.busy ? (
+                <div className="absolute inset-0 grid place-items-center bg-ink-950/60">
+                  <span className="flex items-center gap-2 text-xs text-slate-200">
+                    <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                    Préparation de l’aperçu…
+                  </span>
+                </div>
+              ) : null}
+
               <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-linear-to-t from-ink-950/85 to-transparent px-4 pt-10 pb-3">
                 <span className="flex items-center gap-2 text-sm font-medium text-white">
                   {participantName.trim() || 'Vous'}
@@ -212,6 +241,12 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
                 </span>
               </div>
             </VideoSurface>
+
+            {preview.error ? (
+              <Notice tone="warning" title="Aperçu de l’effet indisponible">
+                {preview.error}
+              </Notice>
+            ) : null}
 
             <div className="flex flex-wrap gap-2.5">
               {/* Libellé et état suivent la piste réellement active : un micro
@@ -276,8 +311,8 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
               <BackgroundEffectPicker />
 
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Votre choix s’appliquera dès votre entrée en réunion ; l’aperçu ci-dessus montre
-                votre caméra brute.
+                L’aperçu ci-dessus applique le même traitement que celui qui sera envoyé aux
+                participants dès votre entrée en réunion.
               </p>
             </section>
           </section>
