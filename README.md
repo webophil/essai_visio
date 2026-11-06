@@ -146,11 +146,11 @@ point d'accroche qui est utilisé (`src/media/backgroundBlur.ts`), avec trois tr
 
 ### Décors disponibles
 
-Quatre décors sont **peints localement** (`src/media/backdrops.ts`) : *Studio* (mur chaud),
-*Ardoise* (bleu-gris), *Sable* (beige minéral) et *Nuit* (bleu profond). Ils sont composés d'un
-dégradé, d'un halo lumineux et d'un vignettage, à la taille exacte du flux : aucun fichier image
-n'est livré, ce qui évite d'ajouter plusieurs méga-octets à un artefact qui frôle la limite de
-10 Mio, et écarte tout problème de licence sur une photo de « salle de réunion ».
+Deux décors sont **peints localement** (`src/media/backdrops.ts`) : *Studio* (mur chaud) et
+*Ardoise* (bleu-gris). Ils sont composés d'un dégradé, d'un halo lumineux et d'un vignettage, à la
+taille exacte du flux : aucun fichier image n'est livré, ce qui évite d'ajouter plusieurs
+méga-octets à un artefact qui frôle la limite de 10 Mio, et écarte tout problème de licence sur une
+photo de « salle de réunion ».
 
 Une **image personnelle** peut être importée depuis le disque (`PNG`, `JPEG`, `WebP`… jusqu'à 8 Mo).
 Elle est chargée par le navigateur sous forme d'URL d'objet, **n'est jamais téléversée**, n'est pas
@@ -161,6 +161,10 @@ Tant qu'aucun effet n'est actif, votre aperçu local est en miroir, comme dans t
 visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux publié** : un logo ou un
 slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
 n'a jamais été inversé.
+
+Le même choix est proposé **avant de rejoindre**, sur l'écran de préparation : le flou ou le décor
+retenu est mémorisé puis appliqué dès l'entrée en salle. L'aperçu de préparation, lui, montre la
+caméra brute — le traitement n'existe qu'une fois le flux publié.
 
 ### Qualité de l'image
 
@@ -180,7 +184,7 @@ Trois réglages expliquent l'écart entre la première version et celle-ci :
   « gommer » la personne.
 
 Le détourage reste calculé à ~12 images/s : entre deux calculs, le dernier masque est réutilisé. Le
-coût reste borné sur une machine modeste, et le panneau affiche les compteurs réels.
+coût reste borné sur une machine modeste.
 
 ### Géométrie du flux — cause d'un défaut corrigé
 
@@ -231,9 +235,8 @@ visible, avant d'annoncer que l'effet est actif :
 3. au moins une image doit **atteindre le traitement** dans les 4 secondes.
 
 Chacun de ces contrôles échoue avec un message en français, retire le middleware et laisse la
-caméra normale. Le panneau « Effets de fond » affiche en complément des compteurs (images reçues,
-images recomposées, détourages calculés par seconde) et la **couverture de la silhouette** : des
-**nombres uniquement**, jamais une image.
+caméra normale. Aucun compteur ni donnée de diagnostic n'est exposé dans l'interface : les
+participants ne sont pas techniciens, ces mesures ne concernent que le développement.
 
 Choix de conception :
 
@@ -401,10 +404,11 @@ main, depuis l'adresse de prévisualisation.
 | 4. Vidéo : activer puis couper la caméra de chaque côté | Les vignettes suivent l'état réel, la voix continue de passer |
 | 5. Partage d'écran depuis un PC | L'écran occupe la scène, les caméras passent en vignettes, le son du partage est audible |
 | 6. Chat : un message depuis chaque PC | Message affiché avec auteur et heure des deux côtés ; si le preset interdit l'écrit, le panneau l'explique au lieu d'échouer |
-| 7. Effets : « Flou » sur un PC | Le panneau affiche des compteurs non nuls (≈ 20 images/s reçues, ≈ 12 détourages/s) et une silhouette détectée entre 10 % et 70 % ; **visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant**, sans contour qui scintille quand vous bougez la tête ; le retour à « Aucun effet » rétablit l'image d'origine |
-| 7 bis. Effets : « Studio », puis « Nuit », puis une **image importée** | Le fond change en une à deux secondes, la silhouette reste nette et ses bords ne bavent pas sur le décor ; une image portrait est rognée et centrée, jamais étirée ; « Retirer » revient à la caméra d'origine |
+| 6 bis. Sur l'écran « Rejoindre », choisir « Flou » puis « Ardoise », puis entrer | L'aperçu de préparation reste la caméra brute ; dès l'entrée, le flux publié porte l'effet choisi, chez vous comme chez l'autre participant |
+| 7. Effets : « Flou » sur un PC | **Visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant**, sans contour qui scintille quand vous bougez la tête ; le retour à « Aucun effet » rétablit l'image d'origine |
+| 7 bis. Effets : « Studio », puis « Ardoise », puis une **image importée** | Le fond change en une à deux secondes, la silhouette reste nette et ses bords ne bavent pas sur le décor ; une image portrait est rognée et centrée, jamais étirée ; « Retirer » revient à la caméra d'origine |
 | 8. Effets sur un navigateur WebKit ancien ou sans WebAssembly SIMD | Message d'échec explicite, caméra normale conservée, aucun écran noir |
-| 9. En pleine réunion, basculer « Aucun effet » → « Flou » → « Aucun effet » | Le changement s'applique en une à deux secondes, sans couper la voix ; les compteurs repartent à chaque activation, l'image d'origine revient au retrait |
+| 9. En pleine réunion, basculer « Aucun effet » → « Flou » → « Aucun effet » | Le changement s'applique en une à deux secondes, sans couper la voix ; l'image d'origine revient au retrait |
 | 10. Ouvrir « Participants », « Chat » puis « Effets » ; envoyer un message de 500 caractères sans espace | La taille des vidéos ne change pas, le panneau défile seul, le message passe à la ligne ; à 2, 3, 4 puis 5 participants la grille reste équilibrée et les images ne sont pas déformées |
 | 10 bis. Activer puis retirer « Flou », seul, puis à deux participants | Aucun saut : les cadres gardent exactement la même taille et la même place pendant le remplacement de la piste |
 | 11. Partager l'écran pendant qu'un panneau est ouvert | L'écran garde son ratio (`object-contain`), l'incrustation webcam reste en 16:9 dans le coin |

@@ -96,7 +96,7 @@ export interface ScreenShareState {
 export type VideoEffectId = 'none' | 'blur' | 'backdrop'
 
 /** Décors synthétiques proposés sans aucun fichier image à embarquer. */
-export type BackdropPresetId = 'studio' | 'ardoise' | 'sable' | 'nuit'
+export type BackdropPresetId = 'studio' | 'ardoise'
 
 /** Fond de remplacement, dans l'un des deux modes réellement rendus. */
 export type VideoBackdrop =

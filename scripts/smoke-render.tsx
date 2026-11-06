@@ -312,15 +312,15 @@ checks.push({
   run: () => {
     // Décors peints : aucun fichier image livré, donc rien à télécharger ni à
     // licencier pour une photo de « salle de réunion ».
-    expect(BACKDROP_PRESETS.length === 4, 'quatre décors proposés')
-    expect(new Set(BACKDROP_PRESETS.map((preset) => preset.id)).size === 4, 'identifiants uniques')
+    expect(BACKDROP_PRESETS.length === 2, 'deux décors proposés')
+    expect(new Set(BACKDROP_PRESETS.map((preset) => preset.id)).size === 2, 'identifiants uniques')
     expect(
       BACKDROP_PRESETS.every(
         (preset) => preset.label.length > 0 && preset.swatch.includes('gradient'),
       ),
       'chaque décor a un libellé et un aperçu fidèle',
     )
-    expect(backdropPreset('nuit').id === 'nuit', 'décor retrouvé par son identifiant')
+    expect(backdropPreset('ardoise').id === 'ardoise', 'décor retrouvé par son identifiant')
     expect(
       backdropPreset('inconnu' as never).id === 'studio',
       'identifiant inconnu → repli sans erreur',
@@ -1060,16 +1060,21 @@ checks.push({
       const effects = renderRoom(1, 'effects')
       expect(effects.includes('Effets de fond'), 'panneau des effets ouvert')
       expect(effects.includes('Aucun effet') && effects.includes('Flou'), 'flou et image d’origine proposés')
-      expect(effects.includes('Studio') && effects.includes('Nuit'), 'décors peints proposés')
+      expect(effects.includes('Studio') && effects.includes('Ardoise'), 'décors peints proposés')
+      expect(!effects.includes('Sable') && !effects.includes('Nuit'), 'décors retirés absents')
       expect(effects.includes('Importer une image'), 'import d’image locale proposé')
       expect(effects.includes('Traitement local'), 'traitement local expliqué')
+      expect(
+        !effects.includes('Images reçues') && !effects.includes('Détourages') && !effects.includes('masque brut'),
+        'aucun compteur technique dans le panneau',
+      )
       expect(!effects.includes('Image personnelle active'), 'aucune image annoncée sans import')
 
       // Avec un effet, l'aperçu ne doit plus être inversé : sinon un logo du
       // décor s'affiche à l'envers dans la seule vue de l'utilisateur.
       const decored = renderRoom(1, 'effects', {
         id: 'backdrop',
-        backdrop: { kind: 'preset', preset: 'nuit' },
+        backdrop: { kind: 'preset', preset: 'ardoise' },
       })
       expect(!decored.includes('-scale-x-100'), 'aperçu non inversé dès qu’un effet est actif')
       expect(decored.includes('plus en miroir'), 'changement d’orientation expliqué')

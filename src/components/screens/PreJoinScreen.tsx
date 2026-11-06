@@ -11,6 +11,7 @@ import {
   Users,
   Video,
   VideoOff,
+  WandSparkles,
 } from 'lucide-react'
 
 import { PhilDevLogo } from '../Brand/PhilDevLogo'
@@ -20,6 +21,7 @@ import { SelectField } from '../ui/SelectField'
 import { StatusPill } from '../ui/StatusPill'
 import { TextField } from '../ui/TextField'
 import { InviteByEmailPanel } from '../meeting/InviteByEmailPanel'
+import { BackgroundEffectPicker } from '../meeting/BackgroundEffectsPanel'
 import { VideoPlaceholder, VideoSurface } from '../meeting/VideoSurface'
 import { useMeeting } from '../../state/meetingContext'
 import { NOTICES } from '../../lib/notices'
@@ -260,6 +262,24 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
               <UserRound aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
               {NOTICES.deviceFallback}
             </p>
+
+            {/*
+             * Même choix qu'en réunion, mais sans transport : le décor retenu
+             * est mémorisé puis appliqué au flux publié à l'entrée en salle.
+             */}
+            <section className="surface-panel flex flex-col gap-3 rounded-2xl p-4">
+              <h2 className="flex items-center gap-2 text-sm font-medium text-white">
+                <WandSparkles aria-hidden="true" className="size-4 text-accent-200" />
+                Arrière-plan
+              </h2>
+
+              <BackgroundEffectPicker />
+
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Votre choix s’appliquera dès votre entrée en réunion ; l’aperçu ci-dessus montre
+                votre caméra brute.
+              </p>
+            </section>
           </section>
 
           <section className="surface-panel flex flex-col gap-5 rounded-2xl p-5">

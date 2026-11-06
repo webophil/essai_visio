@@ -277,7 +277,21 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
   /** Active ou retire un effet de fond local (flou ou décor). */
   const setVideoEffect = useCallback(
     async (choice: VideoEffectChoice) => {
-      if (!transport) return
+      // Avant l'entrée en salle, aucun transport n'existe encore : le choix est
+      // mémorisé tel quel, puis appliqué au flux publié juste après `join()`
+      // (voir `joinMeeting`). L'aperçu de préparation reste la caméra brute.
+      if (!transport) {
+        if (
+          videoEffect.backdrop?.kind === 'image' &&
+          (choice.backdrop?.kind !== 'image' || choice.backdrop.url !== videoEffect.backdrop.url)
+        ) {
+          releaseBackdrop(videoEffect)
+        }
+
+        setVideoEffectError(null)
+        setVideoEffectState(choice)
+        return
+      }
 
       setVideoEffectBusy(true)
       setVideoEffectError(null)

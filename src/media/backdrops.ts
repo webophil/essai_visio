@@ -3,8 +3,8 @@ import type { BackdropPresetId } from '../types/meeting'
 /**
  * Décors de remplacement, peints à la volée sur un canvas.
  *
- * Aucun fichier image n'est livré avec l'application : les quatre décors sont
- * des dégradés composés localement. Deux raisons :
+ * Aucun fichier image n'est livré avec l'application : les décors sont des
+ * dégradés composés localement. Deux raisons :
  *
  * 1. **poids** — l'artefact publié frôle déjà la limite de 10 Mio avec le
  *    moteur de segmentation ; une photo de bureau en ajouterait plusieurs ;
@@ -40,18 +40,6 @@ export const BACKDROP_PRESETS: readonly BackdropPreset[] = [
     label: 'Ardoise',
     description: 'Bleu-gris profond, halo derrière la silhouette.',
     swatch: 'radial-gradient(circle at 50% 35%, #2b4a68 0%, #16283c 45%, #070c17 100%)',
-  },
-  {
-    id: 'sable',
-    label: 'Sable',
-    description: 'Beige minéral, sans reflet bleu.',
-    swatch: 'radial-gradient(circle at 35% 20%, #6b5942 0%, #3b3024 45%, #120d09 100%)',
-  },
-  {
-    id: 'nuit',
-    label: 'Nuit',
-    description: 'Bleu nuit, halo turquoise discret.',
-    swatch: 'radial-gradient(circle at 60% 30%, #123a4a 0%, #0b1a3a 45%, #04070e 100%)',
   },
 ]
 
@@ -107,14 +95,6 @@ export function paintBackdrop(
     case 'ardoise':
       paintBase('#1b2c3f', '#060a12')
       paintGlow(width * 0.5, height * 0.34, 'rgba(120, 176, 220, 0.5)', 0.6)
-      break
-    case 'sable':
-      paintBase('#5c4b36', '#100c08')
-      paintGlow(width * 0.35, height * 0.2, 'rgba(255, 226, 178, 0.45)', 0.6)
-      break
-    case 'nuit':
-      paintBase('#0e1f3d', '#04070e')
-      paintGlow(width * 0.62, height * 0.28, 'rgba(64, 196, 200, 0.42)', 0.55)
       break
   }
 
