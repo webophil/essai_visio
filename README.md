@@ -172,6 +172,9 @@ prend le relais ; l'aperçu n'altère jamais la piste réellement publiée.
 
 Quatre réglages expliquent l'écart entre la première version et celle-ci :
 
+- **modèle général** (256×256) au lieu du modèle « paysage » (144×256) : plus lent de quelques
+  millisecondes, mais nettement plus sûr sur un visage à contre-jour — le modèle paysage laissait
+  une joue hors du masque, et le décor remplaçait la moitié du visage ;
 - **cœur de silhouette solide** : tout pixel classé personne est publié **totalement opaque**, et les
   trous intérieurs — vêtement foncé, joue de profil — sont comblés avant composition. La rampe
   15 % → 60 % d'origine laissait à demi transparentes les zones où le modèle n'est sûr qu'à 40–55 % :

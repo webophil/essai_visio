@@ -26,7 +26,9 @@ const FILES = [
   'selfie_segmentation_solution_simd_wasm_bin.js',
   'selfie_segmentation_solution_simd_wasm_bin.wasm',
   'selfie_segmentation_solution_simd_wasm_bin.data',
-  'selfie_segmentation_landscape.tflite',
+  // Modèle général (256×256), retenu pour sa précision sur les visages ; le
+  // modèle « paysage » du paquet n'est pas livré, il n'est plus utilisé.
+  'selfie_segmentation.tflite',
 ]
 
 if (!existsSync(source)) {

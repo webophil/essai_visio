@@ -741,8 +741,10 @@ export async function createBackgroundBlurRenderer(
   }
 
   const segmenter = new Engine({ locateFile: (file) => `${ENGINE_PATH}/${file}` })
-  // `modelSelection: 1` = modèle « paysage », adapté à une webcam 16:9.
-  segmenter.setOptions({ modelSelection: 1 })
+  // `modelSelection: 0` = modèle général (256×256), plus précis sur les
+  // visages que le modèle « paysage » (144×256) : celui-ci laissait une joue
+  // dans l'ombre hors du masque, et le décor remplaçait la moitié du visage.
+  segmenter.setOptions({ modelSelection: 0 })
 
   let disposed = false
   let maskReady = false
