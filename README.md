@@ -140,7 +140,7 @@ point d'accroche qui est utilisé (`src/media/backgroundBlur.ts`), avec trois tr
 1. le détourage de la silhouette est calculé **sur l'appareil** par MediaPipe Selfie Segmentation
    (WebAssembly), servi depuis `public/vendor/mediapipe` — aucun CDN, aucun service externe ;
 2. chaque image publiée est composée d'un fond — flouté, teinte peinte ou image importée — et de la
-   silhouette nette découpée par le masque, contours adoucis ;
+   silhouette nette découpée par le masque, lisière adoucie sur un pixel ;
 3. la piste audio et le partage d'écran ne sont jamais touchés, et **aucune seconde capture** de la
    caméra n'est ouverte : le SDK reste propriétaire de la piste.
 
@@ -170,8 +170,13 @@ prend le relais ; l'aperçu n'altère jamais la piste réellement publiée.
 
 ### Qualité de l'image
 
-Trois réglages expliquent l'écart entre la première version et celle-ci :
+Quatre réglages expliquent l'écart entre la première version et celle-ci :
 
+- **cœur de silhouette solide** : tout pixel classé personne est publié **totalement opaque**, et les
+  trous intérieurs — vêtement foncé, joue de profil — sont comblés avant composition. La rampe
+  15 % → 60 % d'origine laissait à demi transparentes les zones où le modèle n'est sûr qu'à 40–55 % :
+  le décor se voyait au travers du visage et des vêtements sombres. Seul le pixel de lisière reste
+  progressif, pour l'anticrénelage ;
 - **masque à 256 px de large** (contre 160) et **lissage adaptatif** : à l'arrêt, la nouvelle mesure
   ne pèse que 35 % du contour affiché et le stabilise ; dès que la silhouette bouge, elle monte
   jusqu'à 95 %, pour ne plus laisser de traînée derrière la tête ;
@@ -212,10 +217,14 @@ MediaPipe n'encode **pas** son masque en niveaux de gris opaques : le convertiss
 restaurée qu'à ~30 % d'opacité, et le fond flou transparaissait à travers le visage — l'image
 entière semblait floue.
 
-`applyPersonMask` lit désormais le rouge et l'alpha (équivalents), applique une rampe douce
-(15 % → 60 %) qui rend le premier plan **totalement net** tout en gardant un contour fondu, et
-renvoie la couverture de la silhouette. Si aucune silhouette n'est détectée (< 0,5 % de l'image),
-l'image reste nette : un masque inexploitable ne peut plus produire une vidéo entièrement floue.
+`applyPersonMask` lit désormais le rouge et l'alpha (équivalents), puis construit une carte
+« personne » au seuil de 42 % de confiance : tout pixel retenu est rendu **totalement opaque**.
+Les trous intérieurs (vêtement foncé, joue de profil) sont comblés par un balayage depuis les bords
+du cadre — ce que ce balayage n'atteint pas est un intérieur de silhouette, pas du décor — dans la
+limite d'1 % de l'image ; au-delà, il s'agit d'un vrai jour (bras écarté du torse). Seul le pixel de
+fond collé à la silhouette garde une opacité progressive. Si aucune silhouette n'est détectée
+(< 0,5 % de l'image), l'image reste nette : un masque inexploitable ne peut plus produire une vidéo
+entièrement floue.
 
 ### Chargement du moteur — cause d'un défaut corrigé
 
@@ -238,7 +247,10 @@ visible, avant d'annoncer que l'effet est actif :
 
 Chacun de ces contrôles échoue avec un message en français, retire le middleware et laisse la
 caméra normale. Aucun compteur ni donnée de diagnostic n'est exposé dans l'interface : les
-participants ne sont pas techniciens, ces mesures ne concernent que le développement.
+participants ne sont pas techniciens, ces mesures ne concernent que le développement. En
+développement seulement, l'URL `?mask` affiche le masque et sa couverture dans un panneau
+flottant : ce module est chargé derrière `import.meta.env.DEV` et n'existe pas dans l'artefact
+publié.
 
 Choix de conception :
 

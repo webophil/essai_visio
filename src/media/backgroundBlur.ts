@@ -2,6 +2,7 @@ import type { RTKSelfMedia, VideoMiddleware } from '@cloudflare/realtimekit'
 
 import type { VideoEffectChoice } from '../types/meeting'
 import { paintBackdrop } from './backdrops'
+import type { MaskDiagnostics } from './maskDiagnostics'
 
 /**
  * Effets de fond (flou et décors) — traitement **entièrement local**.
@@ -126,9 +127,38 @@ const PERSON_MAX_WIDTH = 1280
 /** Largeur maximale du flux publié (une webcam 1440p est ramenée à 1280 px). */
 const MAX_FRAME_WIDTH = 1280
 
-/** Bornes de la rampe appliquée au masque, en fraction de 255. */
-const MASK_LOW = 0.15
-const MASK_HIGH = 0.6
+/**
+ * Seuil de confiance à partir duquel un pixel appartient **franchement** à la
+ * personne (fraction de 255).
+ *
+ * Une rampe 15 % → 60 % rendait auparavant le premier plan totalement opaque
+ * seulement au-delà de 60 % de confiance. Or le modèle rend 40–55 % sur une
+ * joue de profil ou un vêtement foncé, c'est-à-dire sur des zones bien
+ * réelles : elles restaient à demi transparentes et le décor se voyait au
+ * travers du visage et des vêtements sombres. À 42 %, ces zones redeviennent
+ * opaques ; le bruit de fond, lui, reste largement sous ce seuil.
+ */
+const MASK_SOLID_LEVEL = 0.42
+
+/** Même seuil, exprimé en valeur de masque entière (0–255). */
+const PERSON_LEVEL = Math.round(MASK_SOLID_LEVEL * 255)
+
+/**
+ * Début de la rampe appliquée au **liseré** extérieur (fraction de 255).
+ *
+ * Elle ne concerne plus que le pixel de fond collé à la silhouette : c'est
+ * l'anticrénelage du contour, pas une large bande translucide au milieu du
+ * visage.
+ */
+const MASK_EDGE_LOW = 0.18
+
+/**
+ * Part maximale de l'image qu'un trou intérieur peut occuper pour être comblé.
+ *
+ * Un trou plus grand qu'1 % du cadre est un vrai jour (bras écarté du torse) :
+ * le combler collerait le bras au corps et mangerait le décor.
+ */
+const MAX_HOLE_RATIO = 0.01
 
 /**
  * En dessous de cette couverture, aucun premier plan n'est détecté.
@@ -294,17 +324,139 @@ export function maskValueForPixel(red: number, alpha: number): number {
 }
 
 /**
- * Opacité du premier plan pour une valeur de masque (0–255).
+ * Opacité d'un pixel de **liseré**, pour une valeur de masque (0–255).
  *
- * Le masque MediaPipe est **progressif** (valeurs intermédiaires sur les
- * contours). Une rampe douce entre 15 % et 60 % rend le visage et le corps
- * totalement nets tout en conservant un contour fondu.
+ * Cette rampe ne rend plus le corps translucide : tout pixel classé personne
+ * est opaque (voir `applyPersonMask`). Elle adoucit uniquement le pixel de fond
+ * collé à la silhouette, pour éviter une découpe crénelée une fois le masque
+ * agrandi. À partir de 42 % de confiance, l'opacité est pleine ; sous 18 %, le
+ * pixel appartient franchement au décor.
  */
 export function maskOpacity(maskValue: number): number {
   const normalized = maskValue / 255
-  const t = Math.min(1, Math.max(0, (normalized - MASK_LOW) / (MASK_HIGH - MASK_LOW)))
+  const t = Math.min(
+    1,
+    Math.max(0, (normalized - MASK_EDGE_LOW) / (MASK_SOLID_LEVEL - MASK_EDGE_LOW)),
+  )
   // Smoothstep : dérivée nulle aux deux bornes, pas de marche visible.
   return Math.round(t * t * (3 - 2 * t) * 255)
+}
+
+/**
+ * Carte binaire « personne » d'un masque, à partir de sa valeur par pixel.
+ *
+ * Un pixel est retenu dès `MASK_SOLID_LEVEL` : c'est ce qui rend un vêtement
+ * foncé ou une joue de profil **pleinement opaques**, au lieu de les laisser
+ * translucides parce que le modèle n'en est qu'à moitié sûr.
+ */
+export function personMapFromMask(values: Uint8Array): Uint8Array {
+  const map = new Uint8Array(values.length)
+  for (let index = 0; index < values.length; index += 1) {
+    map[index] = values[index] >= PERSON_LEVEL ? 1 : 0
+  }
+  return map
+}
+
+/** Tampons réutilisés par `fillEnclosedHoles` : un masque est analysé ~12 fois/s. */
+let holeVisited = new Uint8Array(0)
+let holeStack = new Int32Array(0)
+let holeComponent = new Int32Array(0)
+
+/** Dimensionne les tampons de comblement au masque courant. */
+function ensureHoleBuffers(size: number): void {
+  if (holeVisited.length >= size) return
+  holeVisited = new Uint8Array(size)
+  holeStack = new Int32Array(size)
+  holeComponent = new Int32Array(size)
+}
+
+/**
+ * Comble les trous **intérieurs** de la carte personne, sur place.
+ *
+ * Un vêtement foncé ou une joue à contre-jour donne une confiance faible au
+ * modèle : sans traitement, ces zones passent pour du décor et le fond
+ * apparaît au travers du corps. Un trou est une région de fond **sans aucune
+ * liaison avec le bord du cadre** : le balayage part de tout le bord, et ce
+ * qu'il n'atteint pas est un intérieur de silhouette.
+ *
+ * Un trou plus grand que `maxRatio` est laissé tel quel : c'est un vrai jour
+ * (bras écarté du torse), qu'il ne faut pas murer.
+ *
+ * @returns Nombre de pixels comblés.
+ */
+export function fillEnclosedHoles(
+  person: Uint8Array,
+  width: number,
+  height: number,
+  maxRatio = MAX_HOLE_RATIO,
+): number {
+  const total = width * height
+  if (total === 0 || person.length < total) return 0
+
+  ensureHoleBuffers(total)
+  const visited = holeVisited
+  const stack = holeStack
+  const component = holeComponent
+  visited.fill(0, 0, total)
+
+  let top = 0
+  const enqueue = (index: number): void => {
+    if (person[index] || visited[index]) return
+    visited[index] = 1
+    stack[top] = index
+    top += 1
+  }
+
+  // Tout le fond relié au bord du cadre est du décor : il est marqué d'abord.
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x)
+    enqueue((height - 1) * width + x)
+  }
+  for (let y = 1; y < height - 1; y += 1) {
+    enqueue(y * width)
+    enqueue(y * width + width - 1)
+  }
+
+  while (top > 0) {
+    top -= 1
+    const index = stack[top]
+    const x = index % width
+    if (x > 0) enqueue(index - 1)
+    if (x + 1 < width) enqueue(index + 1)
+    if (index >= width) enqueue(index - width)
+    if (index + width < total) enqueue(index + width)
+  }
+
+  const limit = Math.max(1, Math.floor(total * maxRatio))
+  let filled = 0
+
+  // Ce qui reste non visité n'a aucune liaison avec le bord : c'est un trou
+  // dans la silhouette, pas du décor.
+  for (let start = 0; start < total; start += 1) {
+    if (person[start] || visited[start]) continue
+
+    let count = 0
+    top = 0
+    enqueue(start)
+
+    while (top > 0) {
+      top -= 1
+      const index = stack[top]
+      component[count] = index
+      count += 1
+      const x = index % width
+      if (x > 0) enqueue(index - 1)
+      if (x + 1 < width) enqueue(index + 1)
+      if (index >= width) enqueue(index - width)
+      if (index + width < total) enqueue(index + width)
+    }
+
+    if (count > limit) continue
+    for (let offset = 0; offset < count; offset += 1) person[component[offset]] = 1
+    filled += count
+  }
+
+  return filled
 }
 
 /**
@@ -321,39 +473,84 @@ export interface MaskStats {
   redMean: number
   /** Moyenne du canal alpha du masque brut (0–255). */
   alphaMean: number
+  /** Pixels de trou intérieur comblés lors de cette analyse. */
+  holesFilled: number
+}
+
+/** Vrai si un des quatre voisins de `index` appartient à la personne. */
+function touchesPerson(
+  person: Uint8Array,
+  width: number,
+  height: number,
+  index: number,
+): boolean {
+  const x = index % width
+  if (x > 0 && person[index - 1]) return true
+  if (x + 1 < width && person[index + 1]) return true
+  if (index >= width && person[index - width]) return true
+  if (index + width < width * height && person[index + width]) return true
+  return false
 }
 
 /**
  * Transforme un masque RGBA (`[m, 0, 0, m]`) en masque d'opacité utilisable par
  * `destination-in` : RGB blanc, alpha = opacité du premier plan.
+ *
+ * Le masque n'est plus une simple rampe de confiance : tout pixel classé
+ * personne devient **totalement opaque**, les trous intérieurs sont comblés, et
+ * seule la lisière d'un pixel reste progressive. Une joue de profil ou un pull
+ * foncé ne peut donc plus laisser voir le décor au travers.
  */
-export function applyPersonMask(data: Uint8ClampedArray): MaskStats {
-  let personPixels = 0
+export function applyPersonMask(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+): MaskStats {
+  const total = width * height
+  if (total === 0 || data.length < total * 4) {
+    return { coverage: 0, redMean: 0, alphaMean: 0, holesFilled: 0 }
+  }
+
+  const values = new Uint8Array(total)
   let redTotal = 0
   let alphaTotal = 0
 
-  for (let index = 0; index < data.length; index += 4) {
-    const red = data[index]
-    const alpha = data[index + 3]
-
+  for (let index = 0; index < total; index += 1) {
+    const offset = index * 4
+    const red = data[offset]
+    const alpha = data[offset + 3]
     redTotal += red
     alphaTotal += alpha
-
-    const opacity = maskOpacity(maskValueForPixel(red, alpha))
-    data[index] = 255
-    data[index + 1] = 255
-    data[index + 2] = 255
-    data[index + 3] = opacity
-    if (opacity > 127) personPixels += 1
+    values[index] = maskValueForPixel(red, alpha)
   }
 
-  const total = data.length / 4
-  if (total === 0) return { coverage: 0, redMean: 0, alphaMean: 0 }
+  const person = personMapFromMask(values)
+  const holesFilled = fillEnclosedHoles(person, width, height)
+
+  let personPixels = 0
+  for (let index = 0; index < total; index += 1) {
+    const offset = index * 4
+    let opacity = 0
+
+    if (person[index]) {
+      opacity = 255
+      personPixels += 1
+    } else if (touchesPerson(person, width, height, index)) {
+      // Lisière : la confiance restante donne l'anticrénelage du contour.
+      opacity = maskOpacity(values[index])
+    }
+
+    data[offset] = 255
+    data[offset + 1] = 255
+    data[offset + 2] = 255
+    data[offset + 3] = opacity
+  }
 
   return {
     coverage: personPixels / total,
     redMean: Math.round(redTotal / total),
     alphaMean: Math.round(alphaTotal / total),
+    holesFilled,
   }
 }
 
@@ -530,6 +727,19 @@ export async function createBackgroundBlurRenderer(
     throw new VideoEffectError("Le flou d'arrière-plan n'est pas disponible sur ce navigateur.")
   }
 
+  // Diagnostic du masque : **développement uniquement**. L'import dynamique est
+  // gardé par une constante remplacée par `false` à la compilation : le module
+  // et son code ne font pas partie du bundle publié.
+  let diagnostics: MaskDiagnostics | null = null
+  if (import.meta.env.DEV) {
+    try {
+      const { createMaskDiagnostics } = await import('./maskDiagnostics')
+      diagnostics = createMaskDiagnostics()
+    } catch {
+      diagnostics = null
+    }
+  }
+
   const segmenter = new Engine({ locateFile: (file) => `${ENGINE_PATH}/${file}` })
   // `modelSelection: 1` = modèle « paysage », adapté à une webcam 16:9.
   segmenter.setOptions({ modelSelection: 1 })
@@ -598,7 +808,7 @@ export async function createBackgroundBlurRenderer(
     maskCtx.drawImage(segmentationMask, 0, 0, mask.width, mask.height)
 
     const frame = maskCtx.getImageData(0, 0, mask.width, mask.height)
-    const maskStats = applyPersonMask(frame.data)
+    const maskStats = applyPersonMask(frame.data, mask.width, mask.height)
     maskRedMean = maskStats.redMean
     maskAlphaMean = maskStats.alphaMean
 
@@ -623,6 +833,7 @@ export async function createBackgroundBlurRenderer(
     previousMask = new Uint8ClampedArray(frame.data)
 
     maskCtx.putImageData(frame, 0, 0)
+    diagnostics?.update(mask, maskStats)
     maskReady = true
     masks += 1
     masksInWindow += 1
@@ -870,6 +1081,8 @@ export async function createBackgroundBlurRenderer(
     dispose: () => {
       if (disposed) return
       disposed = true
+      diagnostics?.dispose()
+      diagnostics = null
       detach()
       resolveWarmup?.(false)
       resolveWarmup = null

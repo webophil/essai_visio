@@ -42,6 +42,7 @@ import {
   applyPersonMask,
   applyVideoEffect,
   applyVideoEffectWith,
+  fillEnclosedHoles,
   fitCoverRect,
   maskMotion,
   maskOpacity,
@@ -49,6 +50,7 @@ import {
   maskValueForPixel,
   normalizedFrameSize,
   normalizedWorkSize,
+  personMapFromMask,
   readVideoEffectStats,
   smoothMask,
   smoothingWeight,
@@ -266,11 +268,12 @@ checks.push({
     expect(maskValueForPixel(128, 128) === 128, 'contour progressif conservé')
     expect(maskValueForPixel(200, 255) === 200, 'alpha aplati → rouge utilisé')
 
-    // La rampe rend le premier plan totalement net sans toucher au flou du fond.
+    // La rampe ne sert plus qu'au liseré : le cœur est rendu opaque plus bas.
     expect(maskOpacity(0) === 0, 'fond → totalement transparent')
     expect(maskOpacity(255) === 255, 'personne → totalement opaque')
     expect(maskOpacity(26) === 0, 'bruit de fond éliminé')
-    expect(maskOpacity(153) === 255, 'silhouette franche rendue nette à 60 %')
+    expect(maskOpacity(153) === 255, 'confiance ≥ 42 % → opacité pleine')
+    expect(maskOpacity(82) > 0 && maskOpacity(82) < 255, 'liseré extérieur progressif')
 
     // Masque synthétique 8×8 : silhouette 4×4 au centre, fond autour.
     const size = 8
@@ -285,7 +288,7 @@ checks.push({
       }
     }
 
-    const stats = applyPersonMask(mask)
+    const stats = applyPersonMask(mask, size, size)
     expect(Math.abs(stats.coverage - 0.25) < 0.001, 'couverture = 25 % de l’image')
     // Diagnostic de format : 25 % de pixels à 255 ⇒ moyenne brute de 64.
     expect(stats.redMean === 64, 'moyenne du rouge exposée (64)')
@@ -295,6 +298,45 @@ checks.push({
     expect(alphaAt(4, 4) === 255, 'centre → premier plan opaque')
     expect(alphaAt(0, 0) === 0, 'coin → arrière-plan')
     expect(alphaAt(2, 2) === 255, 'bord de la silhouette conservé')
+
+    // --- Cœur solide et trous intérieurs ----------------------------------
+    expect(
+      personMapFromMask(Uint8Array.from([100, 200])).join('') === '01',
+      'seuil de confiance appliqué',
+    )
+
+    const ring = new Uint8Array(5 * 5)
+    for (let y = 1; y < 4; y += 1) {
+      for (let x = 1; x < 4; x += 1) ring[y * 5 + x] = 1
+    }
+    ring[2 * 5 + 2] = 0
+    expect(fillEnclosedHoles(ring, 5, 5) === 1, 'trou intérieur comblé')
+    expect(ring[2 * 5 + 2] === 1, 'pixel du trou devenu personne')
+
+    // Un jour franchement ouvert (bras écarté) n'est pas muré.
+    const openGap = new Uint8Array(7 * 7)
+    for (let y = 0; y < 7; y += 1) {
+      for (let x = 0; x < 7; x += 1) {
+        openGap[y * 7 + x] = x === 0 || y === 0 || x === 6 || y === 6 ? 1 : 0
+      }
+    }
+    expect(fillEnclosedHoles(openGap, 7, 7) === 0, 'jour trop grand → laissé au décor')
+
+    // Vêtement foncé à 47 % de confiance : opaque, et trou intérieur rebouché.
+    const holed = new Uint8ClampedArray(size * size * 4)
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const index = (y * size + x) * 4
+        const inPerson = x >= 2 && x < 6 && y >= 2 && y < 6
+        const isHole = x === 4 && y === 4
+        holed[index] = inPerson && !isHole ? 120 : 0
+        holed[index + 3] = holed[index]
+      }
+    }
+    const holedStats = applyPersonMask(holed, size, size)
+    expect(holedStats.holesFilled === 1, 'un trou intérieur détecté')
+    expect(holed[(4 * size + 4) * 4 + 3] === 255, 'trou comblé → totalement opaque')
+    expect(holed[(2 * size + 2) * 4 + 3] === 255, 'confiance 47 % → totalement opaque')
 
     // Composition de référence : la personne nette recouvre le fond flou.
     const sharp = 200
