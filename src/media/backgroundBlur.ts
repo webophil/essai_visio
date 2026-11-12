@@ -300,14 +300,33 @@ export function smoothMaskValues(
 }
 
 /**
- * Nombre d'images conservées pour rattraper la latence du détecteur.
+ * Mémoire maximale consacrée à l'historique des images de détourage.
  *
- * À 30 images par seconde, seize images couvrent un demi-seconde. Huit images
- * suffisaient sur une machine rapide, mais un détecteur plus lent (250 ms et
- * plus) sortait de l'historique : le code retombait alors sur l'image la plus
- * récente et l'alignement était perdu, avec un visage à moitié remplacé.
+ * Chaque image est une copie pleine résolution du flux : 3,7 Mo en 1280×720,
+ * 1,2 Mo en 640×480. Un nombre fixe d'images coûtait donc jusqu'à 60 Mo en
+ * haute définition. Le budget ramène l'historique à 24 Mo : huit images en
+ * 720p (200 ms), seize en 480p (530 ms).
  */
-const FRAME_HISTORY = 16
+const FRAME_HISTORY_BUDGET = 24 * 1024 * 1024
+
+/** En dessous, l'historique ne couvrirait plus la latence d'un détecteur lent. */
+const FRAME_HISTORY_MIN = 8
+
+/** Au-dessus, le gain d'alignement devient négligeable devant la mémoire. */
+const FRAME_HISTORY_MAX = 16
+
+/**
+ * Nombre d'images d'historique pour une résolution donnée.
+ *
+ * Le nombre décroît avec la taille des images, de sorte que la mémoire reste
+ * bornée quelle que soit la définition de la caméra. Le plancher de huit images
+ * garde de quoi rattraper un détecteur lent même en 720p.
+ */
+export function frameHistorySize(width: number, height: number): number {
+  const bytesPerFrame = Math.max(1, width * height * 4)
+  const affordable = Math.floor(FRAME_HISTORY_BUDGET / bytesPerFrame)
+  return Math.max(FRAME_HISTORY_MIN, Math.min(FRAME_HISTORY_MAX, affordable))
+}
 
 /**
  * Index de l'image à composer pour un masque donné.
@@ -1076,7 +1095,7 @@ export async function createBackgroundBlurRenderer(
         slot.canvas.getContext('2d')?.drawImage(target, 0, 0)
         slot.at = performance.now()
         historyTimes[historyNext] = slot.at
-        historyNext = (historyNext + 1) % FRAME_HISTORY
+        historyNext = (historyNext + 1) % historyFrames.length
       }
 
       imagesReceived += 1
@@ -1124,6 +1143,17 @@ export async function createBackgroundBlurRenderer(
       window.clearInterval(timer)
       timer = null
     }
+
+    // Libère tout de suite la mémoire de l'historique : une toile ramenée à
+    // 0×0 rend ses pixels au navigateur, alors qu'une référence conservée les
+    // garde jusqu'au prochain attachement.
+    for (const frame of historyFrames) {
+      frame.canvas.width = 0
+      frame.canvas.height = 0
+    }
+    historyFrames.length = 0
+    historyTimes.length = 0
+    historyNext = 0
 
     const element = source
     source = null
@@ -1211,7 +1241,8 @@ export async function createBackgroundBlurRenderer(
       historyFrames.length = 0
       historyTimes.length = 0
       historyNext = 0
-      for (let index = 0; index < FRAME_HISTORY; index += 1) {
+      const historySize = frameHistorySize(size.width, size.height)
+      for (let index = 0; index < historySize; index += 1) {
         const frameCanvas = document.createElement('canvas')
         frameCanvas.width = size.width
         frameCanvas.height = size.height

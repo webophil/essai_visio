@@ -199,8 +199,9 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
 - **composition alignée sur la latence du détecteur** : le masque est calculé sur une image
   envoyée 80 à 200 ms plus tôt. Composé sur l'image courante, il décalait la silhouette de toute
   cette latence — une joue disparaissait d'un côté pendant que le décor réapparaissait de l'autre,
-  d'autant plus que l'on bouge. Le premier plan est maintenant pris dans un historique de huit
-  images, à l'instant exact où le masque a été calculé ; seul le fond reste en direct. Vérifié sur
+  d'autant plus que l'on bouge. Le premier plan est maintenant pris dans un historique d'images, à
+  l'instant exact où le masque a été calculé ; seul le fond reste en direct. Cet historique est borné
+  à **24 Mo** — huit images en 720p, seize en 480p — et libéré dès que l'effet s'arrête. Vérifié sur
   une image qui défile : silhouette entière, alors qu'elle était découpée avant. L'alignement exact
   est préféré au gain de latence : avancer le masque rendait la silhouette franchement décalée dès
   que le détecteur répondait plus lentement ;

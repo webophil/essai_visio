@@ -46,6 +46,7 @@ import {
   despecklePersonMap,
   fillEnclosedHoles,
   fitCoverRect,
+  frameHistorySize,
   frameIndexAt,
   maskOpacity,
   maskSizeFor,
@@ -401,6 +402,15 @@ checks.push({
     expect(frameIndexAt([0, 33, 66], -5) === 0, 'instant antérieur → image la plus ancienne, pour rester aligné')
     expect(frameIndexAt([100, 200, 300], 50) === 0, 'hors historique par le passé → la plus ancienne')
     expect(frameIndexAt([100, 200, 300], 500) === 2, 'hors historique par le futur → la plus récente')
+
+    // Budget mémoire de l'historique : borné quelle que soit la définition.
+    expect(frameHistorySize(1280, 720) === 8, '720p → huit images (environ 30 Mo)')
+    expect(frameHistorySize(640, 480) === 16, '480p → plafond de seize images')
+    expect(frameHistorySize(960, 540) === 12, '540p → douze images, budget respecté')
+    expect(
+      frameHistorySize(3840, 2160) === 8,
+      '4K → plancher de huit images, jamais moins',
+    )
 
     // Lissage temporel de la confiance, avant la décision d'opacité.
     const previousValues = new Float32Array([100, 0])
