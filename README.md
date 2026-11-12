@@ -160,7 +160,9 @@ libérée dès qu'une autre image la remplace.
 Tant qu'aucun effet n'est actif, votre aperçu local est en miroir, comme dans toute
 visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux publié** : un logo ou un
 slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
-n'a jamais été inversé. Le canvas composé garde le rapport d'image de la caméra (souvent 4:3) ;
+n'a jamais été inversé. Seule l'**image de fond** est affichée inversée horizontalement, comme un
+décor vu dans un miroir ; la silhouette, elle, n'est jamais inversée. Le canvas composé garde le
+rapport d'image de la caméra (souvent 4:3) ;
 l'aperçu le cadre en `object-cover`, comme la vidéo naturelle, pour ne pas afficher de bandes
 latérales.
 

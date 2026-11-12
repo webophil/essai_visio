@@ -1145,7 +1145,14 @@ export async function createBackgroundBlurRenderer(
         scene.width,
         scene.height,
       )
+      // Seul le décor est inversé horizontalement : il apparaît comme la pièce
+      // vue dans un miroir. La personne, elle, n'est jamais inversée — ni dans
+      // l'aperçu, ni dans le flux publié.
+      sceneCtx.save()
+      sceneCtx.translate(scene.width, 0)
+      sceneCtx.scale(-1, 1)
       sceneCtx.drawImage(backdropImage, rect.x, rect.y, rect.width, rect.height)
+      sceneCtx.restore()
       return
     }
 
