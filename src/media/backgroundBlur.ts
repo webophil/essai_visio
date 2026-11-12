@@ -112,10 +112,10 @@ const MASK_SMOOTHING_STILL = 0.35
  * silhouette mêlé à la nouvelle : le contour semblait très flou. Dès que le
  * masque change nettement, la mesure fraîche prend presque toute la place.
  */
-const MASK_SMOOTHING_MOVING = 0.95
+const MASK_SMOOTHING_MOVING = 0.82
 
 /** Variation moyenne d'alpha (0–1) au-delà de laquelle on parle de mouvement. */
-const MASK_MOTION_THRESHOLD = 0.03
+const MASK_MOTION_THRESHOLD = 0.09
 
 /**
  * Nombre d'analyses vides tolérées avant d'admettre que la personne est sortie.
@@ -154,22 +154,14 @@ const MASK_SOLID_LEVEL = 0.3
 const PERSON_LEVEL = Math.round(MASK_SOLID_LEVEL * 255)
 
 /**
- * Début de la rampe appliquée au **liseré** extérieur (fraction de 255).
+ * Début de la rampe d'anticrénelage du contour (fraction de 255).
  *
- * Elle ne concerne plus que le pixel de fond collé à la silhouette : c'est
- * l'anticrénelage du contour, pas une large bande translucide au milieu du
- * visage.
+ * Elle s'applique au pixel de **silhouette** collé au décor : c'est lui qui
+ * s'estompe légèrement. Peindre le pixel de décor voisin, comme avant, collait
+ * un cerne de la pièce réelle autour de la tête — un halo gris qui scintillait
+ * à chaque mouvement du masque.
  */
 const MASK_EDGE_LOW = 0.18
-
-/**
- * Opacité maximale du liseré extérieur.
- *
- * Le pixel de fond collé à la silhouette ne doit pas devenir presque opaque :
- * ce serait un cerne autour du visage. Il reste à demi transparent, juste de
- * quoi adoucir la marche du masque une fois agrandi.
- */
-const MASK_EDGE_MAX = 128
 
 /**
  * Part maximale de l'image qu'un trou intérieur peut occuper pour être comblé.
@@ -352,8 +344,9 @@ export function frameIndexAt(times: readonly number[], time: number): number {
 /**
  * Part de la nouvelle mesure dans le masque affiché.
  *
- * À l'arrêt : 35 %, le contour se stabilise. En mouvement : jusqu'à 95 %, il
- * suit immédiatement et ne laisse plus de traînée derrière la tête.
+ * À l'arrêt : 35 %, le contour se stabilise. En mouvement : 82 %, il suit vite
+ * sans laisser de traînée, tout en gardant assez de mémoire pour que la
+ * silhouette ne se mette pas à clignoter au rythme des analyses.
  */
 export function smoothingWeight(motion: number): number {
   const ramp = Math.min(1, Math.max(0, motion / MASK_MOTION_THRESHOLD))
@@ -592,18 +585,18 @@ export interface MaskStats {
   holesFilled: number
 }
 
-/** Vrai si un des quatre voisins de `index` appartient à la personne. */
-function touchesPerson(
+/** Vrai si un des quatre voisins de `index` appartient au décor. */
+function touchesBackground(
   person: Uint8Array,
   width: number,
   height: number,
   index: number,
 ): boolean {
   const x = index % width
-  if (x > 0 && person[index - 1]) return true
-  if (x + 1 < width && person[index + 1]) return true
-  if (index >= width && person[index - width]) return true
-  if (index + width < width * height && person[index + width]) return true
+  if (x > 0 && !person[index - 1]) return true
+  if (x + 1 < width && !person[index + 1]) return true
+  if (index >= width && !person[index - width]) return true
+  if (index + width < width * height && !person[index + width]) return true
   return false
 }
 
@@ -613,8 +606,9 @@ function touchesPerson(
  *
  * Le masque n'est plus une simple rampe de confiance : tout pixel classé
  * personne devient **totalement opaque**, les trous intérieurs sont comblés, et
- * seule la lisière d'un pixel reste progressive. Une joue de profil ou un pull
- * foncé ne peut donc plus laisser voir le décor au travers.
+ * seul le pixel de silhouette collé au décor reste progressif. Une joue de
+ * profil ou un pull foncé ne peut donc plus laisser voir le décor au travers, et
+ * aucun pixel de la pièce réelle n'est peint autour de la tête.
  */
 export function applyPersonMask(
   data: Uint8ClampedArray,
@@ -666,12 +660,13 @@ export function applyPersonMask(
     let opacity = 0
 
     if (person[index]) {
-      opacity = 255
+      // Anticrénelage **dans** la silhouette : un pixel de bord s'estompe selon
+      // sa confiance. Le décor, lui, reste totalement transparent — c'est ce qui
+      // supprime le halo de pièce réelle autour du visage.
+      opacity = touchesBackground(person, width, height, index)
+        ? maskOpacity(values[index])
+        : 255
       personPixels += 1
-    } else if (touchesPerson(person, width, height, index)) {
-      // Lisière : la confiance restante donne l'anticrénelage du contour,
-      // sans jamais former un cerne opaque.
-      opacity = Math.min(MASK_EDGE_MAX, maskOpacity(values[index]))
     }
 
     data[offset] = 255

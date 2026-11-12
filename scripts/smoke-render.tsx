@@ -414,7 +414,10 @@ checks.push({
     expect(maskValueMotion(null, still) === 1, 'premier masque → mouvement maximal')
     expect(maskValueMotion(still, elsewhere) > 0.4, 'changement net mesuré')
     expect(smoothingWeight(0) < 0.4, 'à l’arrêt, le masque est fortement lissé')
-    expect(smoothingWeight(1) > 0.9, 'en mouvement, la mesure fraîche domine')
+    expect(
+      smoothingWeight(1) > 0.75 && smoothingWeight(1) < 0.9,
+      'en mouvement, la mesure fraîche domine sans faire clignoter le contour',
+    )
     expect(smoothingWeight(0.1) > smoothingWeight(0), 'poids croissant avec le mouvement')
 
     // Une zone hésitante finit franchement opaque, jamais à demi transparente :

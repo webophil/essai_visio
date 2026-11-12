@@ -188,8 +188,9 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
 - **cœur de silhouette solide** : tout pixel classé personne est publié **totalement opaque**, et les
   trous intérieurs — vêtement foncé, joue de profil — sont comblés avant composition. La rampe
   15 % → 60 % d'origine laissait à demi transparentes les zones où le modèle n'est sûr qu'à 40–55 % :
-  le décor se voyait au travers du visage et des vêtements sombres. Seul le pixel de lisière reste
-  progressif, pour l'anticrénelage ;
+  le décor se voyait au travers du visage et des vêtements sombres. Seul le pixel de silhouette collé
+  au décor reste partiellement transparent, pour l'anticrénelage ; le décor voisin, lui, n'est
+  jamais peint — il formait sinon un cerne gris autour de la tête, qui scintillait en mouvement ;
 - **masque à 256 px de large** (contre 160) et **lissage de la confiance avant décision** : à
   l'arrêt, la nouvelle mesure ne pèse que 35 % et le contour se stabilise ; en mouvement, elle monte
   à 95 % pour ne pas laisser de traînée. Le lissage portait auparavant sur l'opacité finale : une
