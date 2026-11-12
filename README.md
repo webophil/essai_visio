@@ -200,8 +200,10 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
   envoyée 80 à 200 ms plus tôt. Composé sur l'image courante, il décalait la silhouette de toute
   cette latence — une joue disparaissait d'un côté pendant que le décor réapparaissait de l'autre,
   d'autant plus que l'on bouge. Le premier plan est maintenant pris dans un historique d'images, à
-  l'instant exact où le masque a été calculé ; seul le fond reste en direct. Cet historique est borné
-  à **24 Mo** — huit images en 720p, seize en 480p — et libéré dès que l'effet s'arrête. Vérifié sur
+  l'instant exact où le masque a été calculé ; seul le fond reste en direct. Cet historique vise
+  **24 Mo** (seize images en 480p, douze en 540p), mais son plancher de huit images l'emporte
+  au-delà de 720p : 28 Mio en 720p, 63 Mio en 1080p, 253 Mio en 4K. Il est libéré dès que l'effet
+  s'arrête. Vérifié sur
   une image qui défile : silhouette entière, alors qu'elle était découpée avant. L'alignement exact
   est préféré au gain de latence : avancer le masque rendait la silhouette franchement décalée dès
   que le détecteur répondait plus lentement ;

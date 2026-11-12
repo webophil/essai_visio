@@ -300,12 +300,15 @@ export function smoothMaskValues(
 }
 
 /**
- * Mémoire maximale consacrée à l'historique des images de détourage.
+ * Budget **cible** de l'historique des images de détourage.
  *
- * Chaque image est une copie pleine résolution du flux : 3,7 Mo en 1280×720,
- * 1,2 Mo en 640×480. Un nombre fixe d'images coûtait donc jusqu'à 60 Mo en
- * haute définition. Le budget ramène l'historique à 24 Mo : huit images en
- * 720p (200 ms), seize en 480p (530 ms).
+ * Chaque image est une copie pleine résolution du flux : 3,5 Mio en 1280×720,
+ * 7,9 Mio en 1920×1080, 31,6 Mio en 3840×2160. Seize images coûtaient jusqu'à
+ * 59 Mo en 720p ; la cible les ramène à huit, soit 28 Mio (200 ms à 30 i/s).
+ *
+ * Ce n'est qu'une cible : sous huit images, l'historique ne couvrirait plus la
+ * latence du détecteur, donc le plancher l'emporte au-delà d'environ 720p —
+ * 28 Mio en 720p, 63 Mio en 1080p, 253 Mio en 4K.
  */
 const FRAME_HISTORY_BUDGET = 24 * 1024 * 1024
 
@@ -318,9 +321,10 @@ const FRAME_HISTORY_MAX = 16
 /**
  * Nombre d'images d'historique pour une résolution donnée.
  *
- * Le nombre décroît avec la taille des images, de sorte que la mémoire reste
- * bornée quelle que soit la définition de la caméra. Le plancher de huit images
- * garde de quoi rattraper un détecteur lent même en 720p.
+ * Le nombre décroît avec la taille des images : la cible de 24 Mio est tenue
+ * jusqu'à environ 720p. Au-delà, le plancher de huit images l'emporte et la
+ * mémoire réelle dépasse la cible (63 Mio en 1080p), ce qui reste préférable à
+ * un historique trop court, lequel casserait l'alignement du masque.
  */
 export function frameHistorySize(width: number, height: number): number {
   const bytesPerFrame = Math.max(1, width * height * 4)
