@@ -183,9 +183,8 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
             <VideoSurface
               stream={media.stream}
               active={hasVideo}
-              /* Avec un effet, l'aperçu composé n'est pas inversé : le décor
-                 reste lisible, comme dans la salle. */
-              mirrored={videoEffect.id === 'none'}
+              /* L'aperçu local est toujours en miroir, avec ou sans effet. */
+              mirrored
               label="Aperçu de votre caméra"
               className="aspect-video w-full rounded-2xl border border-ink-700"
               placeholder={
@@ -203,12 +202,15 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
             >
               {/* Le canvas composé garde le rapport de la caméra (souvent 4:3).
                   `object-cover` le cadre comme la vidéo naturelle : sinon des
-                  bandes latérales apparaissent et le 16:9 semble perdu. */}
+                  bandes latérales apparaissent et le 16:9 semble perdu.
+                  `-scale-x-100` garde l'aperçu en miroir, comme la vidéo sans
+                  effet ; l'image de fond est déjà inversée dans le canvas, elle
+                  apparaît donc à l'endroit ici. Le flux publié reste intact. */}
               <canvas
                 ref={setPreviewCanvas}
                 aria-hidden="true"
                 className={cn(
-                  'absolute inset-0 size-full bg-ink-950 object-cover',
+                  'absolute inset-0 size-full bg-ink-950 -scale-x-100 object-cover',
                   previewVisible ? '' : 'hidden',
                 )}
               />

@@ -157,14 +157,16 @@ Elle est chargée par le navigateur sous forme d'URL d'objet, **n'est jamais té
 conservée après la réunion, et cadrée en « cover » (centrée puis rognée, jamais étirée). Elle est
 libérée dès qu'une autre image la remplace.
 
-Tant qu'aucun effet n'est actif, votre aperçu local est en miroir, comme dans toute
-visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux publié** : un logo ou un
-slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
-n'a jamais été inversé. Seule l'**image de fond** est affichée inversée horizontalement, comme un
-décor vu dans un miroir ; la silhouette, elle, n'est jamais inversée. Le canvas composé garde le
-rapport d'image de la caméra (souvent 4:3) ;
-l'aperçu le cadre en `object-cover`, comme la vidéo naturelle, pour ne pas afficher de bandes
-latérales.
+Votre aperçu local est **toujours** en miroir, effet ou non, comme dans toute visioconférence :
+c'est ce qui rend vos gestes naturels quand vous vous regardez. Le flux publié, lui, n'est jamais
+inversé — les autres participants vous voient dans l'orientation de la caméra.
+
+Pour que le décor ne se retrouve pas à l'envers dans cet aperçu en miroir, l'**image de fond** est
+peinte inversée dans le flux composé : elle apparaît donc à l'endroit chez vous, et inversée chez
+les autres. La silhouette, elle, n'est jamais inversée, ni à l'écran ni dans le flux.
+
+Le canvas composé garde le rapport d'image de la caméra (souvent 4:3) ; l'aperçu le cadre en
+`object-cover`, comme la vidéo naturelle, pour ne pas afficher de bandes latérales.
 
 Le même choix est proposé **avant de rejoindre**, sur l'écran de préparation, et il y est
 **visible en direct**. L'aperçu ne dispose d'aucun transport : une seconde instance du moteur

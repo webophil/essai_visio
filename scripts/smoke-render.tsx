@@ -1146,13 +1146,14 @@ checks.push({
       )
       expect(!effects.includes('Image personnelle active'), 'aucune image annoncée sans import')
 
-      // Avec un effet, l'aperçu ne doit plus être inversé : sinon un logo du
-      // décor s'affiche à l'envers dans la seule vue de l'utilisateur.
+      // Avec un effet, l'aperçu reste en miroir : c'est la vue de l'utilisateur,
+      // pas le flux publié. Le décor est inversé dans le canvas pour apparaître
+      // à l'endroit dans ce miroir.
       const decored = renderRoom(1, 'effects', {
         id: 'backdrop',
         backdrop: { kind: 'preset', preset: 'ardoise' },
       })
-      expect(!decored.includes('-scale-x-100'), 'aperçu non inversé dès qu’un effet est actif')
+      expect(decored.includes('-scale-x-100'), 'aperçu toujours en miroir, même avec un effet')
     } finally {
       if (previousWindow === undefined) delete scope.window
       else scope.window = previousWindow

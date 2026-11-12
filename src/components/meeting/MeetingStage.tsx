@@ -264,7 +264,6 @@ function SelfTile({
   const { meeting } = useRealtimeKitMeeting()
   const videoEnabled = useRealtimeKitSelector((client) => client.self.videoEnabled)
   const audioEnabled = useRealtimeKitSelector((client) => client.self.audioEnabled)
-  const { videoEffect } = useMeeting()
 
   return (
     <div className={compact ? COMPACT_TILE_CLASS : stageTileClass(tiles)}>
@@ -272,13 +271,12 @@ function SelfTile({
         self={meeting.self}
         enabled={videoEnabled}
         /*
-         * L'aperçu local est en miroir tant qu'aucun effet n'est actif, comme
-         * dans toute visioconférence. Avec un effet, le miroir est coupé : le
-         * décor composé (et un éventuel logo) s'affiche alors exactement comme
-         * chez les autres participants. Le flux publié, lui, n'est jamais
-         * inversé.
+         * L'aperçu local est toujours en miroir, avec ou sans effet. Le décor
+         * composé y apparaît à l'endroit : il est déjà inversé dans le flux.
+         * Le flux publié, lui, n'est jamais inversé — les autres participants
+         * voient l'orientation de la caméra.
          */
-        mirrored={videoEffect.id === 'none'}
+        mirrored
         label={`Votre flux vidéo (${name})`}
         className="size-full"
         placeholder={
