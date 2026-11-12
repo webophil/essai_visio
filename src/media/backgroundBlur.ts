@@ -308,6 +308,48 @@ export function smoothMaskValues(
 }
 
 /**
+ * Nombre d'images conservées pour rattraper la latence du détecteur.
+ *
+ * À 30 images par seconde, huit images couvrent 260 ms : au-delà, le masque
+ * serait de toute façon trop vieux pour être utile.
+ */
+const FRAME_HISTORY = 8
+
+/**
+ * Index de l'image à composer pour un masque donné.
+ *
+ * Le détecteur travaille sur une image envoyée quelques dizaines de
+ * millisecondes plus tôt. Composer son masque sur l'image **courante** décale
+ * la silhouette de toute cette latence : une joue est coupée d'un côté et le
+ * décor apparaît de l'autre, d'autant plus que la personne bouge.
+ *
+ * On rejoue donc les images réelles : on prend la plus récente dont
+ * l'horodatage précède l'instant demandé. Si toutes sont plus récentes (première
+ * analyse), la plus récente est retenue.
+ */
+export function frameIndexAt(times: readonly number[], time: number): number {
+  let best = -1
+  let bestAt = Number.NEGATIVE_INFINITY
+
+  for (let index = 0; index < times.length; index += 1) {
+    const at = times[index]
+    if (at <= time && at > bestAt) {
+      best = index
+      bestAt = at
+    }
+  }
+
+  if (best >= 0) return best
+
+  let newest = 0
+  for (let index = 1; index < times.length; index += 1) {
+    if (times[index] > times[newest]) newest = index
+  }
+
+  return newest
+}
+
+/**
  * Part de la nouvelle mesure dans le masque affiché.
  *
  * À l'arrêt : 35 %, le contour se stabilise. En mouvement : jusqu'à 95 %, il
@@ -845,6 +887,14 @@ export async function createBackgroundBlurRenderer(
   const maskState = createMaskTemporalState()
   let heldMasks = 0
 
+  // Historique court des images composables (voir `compose`).
+  const historyFrames: { canvas: HTMLCanvasElement; at: number }[] = []
+  const historyTimes: number[] = []
+  let historyNext = 0
+  let sentAt = 0
+  let maskedAt = 0
+  let maskedReadyAt = 0
+
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
   let source: HTMLVideoElement | null = null
@@ -924,6 +974,8 @@ export async function createBackgroundBlurRenderer(
 
     maskCtx.putImageData(frame, 0, 0)
     diagnostics?.update(mask, maskStats)
+    maskedAt = sentAt
+    maskedReadyAt = performance.now()
     maskReady = true
     masks += 1
     masksInWindow += 1
@@ -974,9 +1026,14 @@ export async function createBackgroundBlurRenderer(
     if (!target || !context || !maskReady) return
 
     // 1. Copie nette du premier plan, **avant** de repeindre le fond.
+    //    L'image vient de l'historique : le masque a été calculé sur une image
+    //    plus ancienne, et composer avec l'image courante décalait la
+    //    silhouette de toute la latence du détecteur.
+    const frameIndex = frameIndexAt(historyTimes, maskedAt + (performance.now() - maskedReadyAt))
+    const foreground = historyFrames[frameIndex]?.canvas ?? target
     personCtx.globalCompositeOperation = 'source-over'
     personCtx.clearRect(0, 0, person.width, person.height)
-    personCtx.drawImage(target, 0, 0, person.width, person.height)
+    personCtx.drawImage(foreground, 0, 0, person.width, person.height)
 
     // 2. Fond : flou calculé ou décor peint.
     paintBackground()
@@ -1006,6 +1063,16 @@ export async function createBackgroundBlurRenderer(
       context.globalCompositeOperation = 'source-over'
       context.drawImage(element, 0, 0, target.width, target.height)
 
+      // Copie horodatée : elle servira à composer le masque sur l'image qui a
+      // réellement servi à le calculer.
+      const slot = historyFrames[historyNext]
+      if (slot) {
+        slot.canvas.getContext('2d')?.drawImage(target, 0, 0)
+        slot.at = performance.now()
+        historyTimes[historyNext] = slot.at
+        historyNext = (historyNext + 1) % FRAME_HISTORY
+      }
+
       imagesReceived += 1
       imagesInWindow += 1
       lastImageAt = performance.now()
@@ -1020,6 +1087,7 @@ export async function createBackgroundBlurRenderer(
         workCtx.filter = SEGMENT_LIFT
         workCtx.drawImage(target, 0, 0, work.width, work.height)
         workCtx.filter = 'none'
+        sentAt = performance.now()
 
         void segmenter
           .send({ image: work })
@@ -1126,6 +1194,18 @@ export async function createBackgroundBlurRenderer(
       const maskSize = maskSizeFor(size.width, size.height)
       mask.width = maskSize.width
       mask.height = maskSize.height
+
+      historyFrames.length = 0
+      historyTimes.length = 0
+      historyNext = 0
+      for (let index = 0; index < FRAME_HISTORY; index += 1) {
+        const frameCanvas = document.createElement('canvas')
+        frameCanvas.width = size.width
+        frameCanvas.height = size.height
+        historyFrames.push({ canvas: frameCanvas, at: Number.NEGATIVE_INFINITY })
+        historyTimes.push(Number.NEGATIVE_INFINITY)
+      }
+
       maskReady = false
       maskState.values = null
       maskState.raw = null

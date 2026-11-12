@@ -191,6 +191,12 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
   à 95 % pour ne pas laisser de traînée. Le lissage portait auparavant sur l'opacité finale : une
   tête que le modèle hésitait à garder devenait à demi transparente, et le décor se voyait au
   travers. Décider **après** le lissage donne des pixels franchement opaques ou transparents ;
+- **composition alignée sur la latence du détecteur** : le masque est calculé sur une image
+  envoyée 80 à 200 ms plus tôt. Composé sur l'image courante, il décalait la silhouette de toute
+  cette latence — une joue disparaissait d'un côté pendant que le décor réapparaissait de l'autre,
+  d'autant plus que l'on bouge. Le premier plan est maintenant pris dans un historique de huit
+  images, à l'instant exact où le masque a été calculé ; seul le fond reste en direct. Vérifié sur
+  une image qui défile : silhouette entière, alors qu'elle était découpée avant ;
 - **flou composé à l'agrandissement** : le fond est réduit d'un facteur 6 puis agrandi avec un
   rayon de 5 px. Un simple redimensionnement bilinéaire laissait des blocs visibles sur un mur uni ;
 - **calque « personne » à la résolution publiée** (1280 px au plus) et contour adouci sur 2 px de ce

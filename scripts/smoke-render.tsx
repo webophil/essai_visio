@@ -46,6 +46,7 @@ import {
   despecklePersonMap,
   fillEnclosedHoles,
   fitCoverRect,
+  frameIndexAt,
   maskOpacity,
   maskSizeFor,
   maskValueForPixel,
@@ -391,6 +392,13 @@ checks.push({
     expect(portrait.height > 720 && portrait.y < 0, 'débord vertical rogné, pas écrasé')
     expect(Math.abs(portrait.y * 2 + portrait.height - 720) < 0.001, 'rognage centré')
     expect(fitCoverRect(0, 0, 1280, 720).width === 1280, 'taille inconnue → cadre complet')
+
+    // Composition alignée sur la latence du détecteur : on rejoue l'image qui
+    // a réellement servi au calcul du masque, pas la plus récente.
+    expect(frameIndexAt([0, 33, 66], 50) === 1, 'image la plus récente avant l’instant demandé')
+    expect(frameIndexAt([0, 33, 66], 100) === 2, 'instant futur → dernière image connue')
+    expect(frameIndexAt([66, Number.NEGATIVE_INFINITY, 0], 50) === 2, 'ordre tournant géré')
+    expect(frameIndexAt([0, 33, 66], -5) >= 0, 'instant antérieur → une image est toujours choisie')
 
     // Lissage temporel de la confiance, avant la décision d'opacité.
     const previousValues = new Float32Array([100, 0])
