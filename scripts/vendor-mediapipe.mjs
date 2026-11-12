@@ -26,8 +26,9 @@ const FILES = [
   'selfie_segmentation_solution_simd_wasm_bin.js',
   'selfie_segmentation_solution_simd_wasm_bin.wasm',
   'selfie_segmentation_solution_simd_wasm_bin.data',
-  // Modèle général (256×256), retenu pour sa précision sur les visages ; le
-  // modèle « paysage » du paquet n'est pas livré, il n'est plus utilisé.
+  // Modèle général (256×256), retenu pour sa précision sur les visages. Le
+  // modèle « paysage » (144×256) a été mesuré plus rapide (78 ms contre 111 ms)
+  // mais moins précis : il n'est pas livré.
   'selfie_segmentation.tflite',
 ]
 

@@ -302,22 +302,12 @@ export function smoothMaskValues(
 /**
  * Nombre d'images conservées pour rattraper la latence du détecteur.
  *
- * À 30 images par seconde, huit images couvrent 260 ms : au-delà, le masque
- * serait de toute façon trop vieux pour être utile.
+ * À 30 images par seconde, seize images couvrent un demi-seconde. Huit images
+ * suffisaient sur une machine rapide, mais un détecteur plus lent (250 ms et
+ * plus) sortait de l'historique : le code retombait alors sur l'image la plus
+ * récente et l'alignement était perdu, avec un visage à moitié remplacé.
  */
-const FRAME_HISTORY = 8
-
-/**
- * Avance donnée au masque, en millisecondes, pour ne pas payer toute la
- * latence du détecteur.
- *
- * Le détecteur répond en 110 ms environ. Rejouer l'image exacte qu'il a vue
- * aligne parfaitement la silhouette, mais affiche la personne avec ces 110 ms
- * de retard — visible sur les lèvres. Avancer le masque de 60 ms coupe ce retard
- * de moitié : la silhouette est alors décalée d'environ 50 ms, soit quelques
- * pixels à vitesse normale, au lieu de la moitié du visage perdue auparavant.
- */
-const MASK_REPLAY_LEAD_MS = 60
+const FRAME_HISTORY = 16
 
 /**
  * Index de l'image à composer pour un masque donné.
@@ -345,12 +335,18 @@ export function frameIndexAt(times: readonly number[], time: number): number {
 
   if (best >= 0) return best
 
+  // Aucune image ne précède l'instant demandé. S'il est plus ancien que tout
+  // l'historique, on prend la plus ancienne : la silhouette reste alignée, elle
+  // accuse simplement un peu plus de retard. S'il est plus récent (première
+  // analyse), on prend la plus récente.
+  let oldest = 0
   let newest = 0
   for (let index = 1; index < times.length; index += 1) {
+    if (times[index] < times[oldest]) oldest = index
     if (times[index] > times[newest]) newest = index
   }
 
-  return newest
+  return time < times[oldest] ? oldest : newest
 }
 
 /**
@@ -1036,10 +1032,10 @@ export async function createBackgroundBlurRenderer(
     //    L'image vient de l'historique : le masque a été calculé sur une image
     //    plus ancienne, et composer avec l'image courante décalait la
     //    silhouette de toute la latence du détecteur.
-    const frameIndex = frameIndexAt(
-      historyTimes,
-      maskedAt + (performance.now() - maskedReadyAt) + MASK_REPLAY_LEAD_MS,
-    )
+    // Image exacte qu'a vue le détecteur : l'alignement passe avant le retard.
+    // Avancer le masque pour gagner quelques millisecondes rendait la silhouette
+    // franchement décalée sur une machine où le détecteur est plus lent.
+    const frameIndex = frameIndexAt(historyTimes, maskedAt + (performance.now() - maskedReadyAt))
     const foreground = historyFrames[frameIndex]?.canvas ?? target
     personCtx.globalCompositeOperation = 'source-over'
     personCtx.clearRect(0, 0, person.width, person.height)

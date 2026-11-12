@@ -398,7 +398,9 @@ checks.push({
     expect(frameIndexAt([0, 33, 66], 50) === 1, 'image la plus récente avant l’instant demandé')
     expect(frameIndexAt([0, 33, 66], 100) === 2, 'instant futur → dernière image connue')
     expect(frameIndexAt([66, Number.NEGATIVE_INFINITY, 0], 50) === 2, 'ordre tournant géré')
-    expect(frameIndexAt([0, 33, 66], -5) >= 0, 'instant antérieur → une image est toujours choisie')
+    expect(frameIndexAt([0, 33, 66], -5) === 0, 'instant antérieur → image la plus ancienne, pour rester aligné')
+    expect(frameIndexAt([100, 200, 300], 50) === 0, 'hors historique par le passé → la plus ancienne')
+    expect(frameIndexAt([100, 200, 300], 500) === 2, 'hors historique par le futur → la plus récente')
 
     // Lissage temporel de la confiance, avant la décision d'opacité.
     const previousValues = new Float32Array([100, 0])
