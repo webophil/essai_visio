@@ -308,6 +308,18 @@ export function smoothMaskValues(
 const FRAME_HISTORY = 8
 
 /**
+ * Avance donnée au masque, en millisecondes, pour ne pas payer toute la
+ * latence du détecteur.
+ *
+ * Le détecteur répond en 110 ms environ. Rejouer l'image exacte qu'il a vue
+ * aligne parfaitement la silhouette, mais affiche la personne avec ces 110 ms
+ * de retard — visible sur les lèvres. Avancer le masque de 60 ms coupe ce retard
+ * de moitié : la silhouette est alors décalée d'environ 50 ms, soit quelques
+ * pixels à vitesse normale, au lieu de la moitié du visage perdue auparavant.
+ */
+const MASK_REPLAY_LEAD_MS = 60
+
+/**
  * Index de l'image à composer pour un masque donné.
  *
  * Le détecteur travaille sur une image envoyée quelques dizaines de
@@ -1024,7 +1036,10 @@ export async function createBackgroundBlurRenderer(
     //    L'image vient de l'historique : le masque a été calculé sur une image
     //    plus ancienne, et composer avec l'image courante décalait la
     //    silhouette de toute la latence du détecteur.
-    const frameIndex = frameIndexAt(historyTimes, maskedAt + (performance.now() - maskedReadyAt))
+    const frameIndex = frameIndexAt(
+      historyTimes,
+      maskedAt + (performance.now() - maskedReadyAt) + MASK_REPLAY_LEAD_MS,
+    )
     const foreground = historyFrames[frameIndex]?.canvas ?? target
     personCtx.globalCompositeOperation = 'source-over'
     personCtx.clearRect(0, 0, person.width, person.height)

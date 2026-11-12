@@ -201,7 +201,9 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
   cette latence — une joue disparaissait d'un côté pendant que le décor réapparaissait de l'autre,
   d'autant plus que l'on bouge. Le premier plan est maintenant pris dans un historique de huit
   images, à l'instant exact où le masque a été calculé ; seul le fond reste en direct. Vérifié sur
-  une image qui défile : silhouette entière, alors qu'elle était découpée avant ;
+  une image qui défile : silhouette entière, alors qu'elle était découpée avant. Le masque est avancé
+  de 60 ms dans cet historique : le détecteur répondant en 110 ms, cela ramène le retard visible sur
+  les lèvres à environ 50 ms, pour un décalage de contour de quelques pixels ;
 - **flou composé à l'agrandissement** : le fond est réduit d'un facteur 6 puis agrandi avec un
   rayon de 5 px. Un simple redimensionnement bilinéaire laissait des blocs visibles sur un mur uni ;
 - **calque « personne » à la résolution publiée** (1280 px au plus) et contour adouci sur 2 px de ce
