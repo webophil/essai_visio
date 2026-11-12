@@ -201,11 +201,14 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
                 />
               }
             >
+              {/* Le canvas composé garde le rapport de la caméra (souvent 4:3).
+                  `object-cover` le cadre comme la vidéo naturelle : sinon des
+                  bandes latérales apparaissent et le 16:9 semble perdu. */}
               <canvas
                 ref={setPreviewCanvas}
                 aria-hidden="true"
                 className={cn(
-                  'absolute inset-0 size-full bg-ink-950 object-contain',
+                  'absolute inset-0 size-full bg-ink-950 object-cover',
                   previewVisible ? '' : 'hidden',
                 )}
               />

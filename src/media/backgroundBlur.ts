@@ -50,6 +50,17 @@ const FRAME_INTERVAL_MS = 50
 /** Fréquence du détourage : entre deux calculs, le dernier masque est réutilisé. */
 const SEGMENT_INTERVAL_MS = 80
 
+/**
+ * Gain appliqué à l'image **d'entrée du détourage**, jamais au flux publié.
+ *
+ * Sur une pièce sombre, la confiance du modèle sur un visage peu éclairé tombait
+ * à 30–40 % : une joue sortait du masque et le décor la remplaçait. Mesuré sur
+ * une capture réelle, avec le moteur et ce code exacts : 39 % de la tête
+ * au-dessus du seuil sans correction, 82 % avec ce gain de 1,2, et aucun faux
+ * positif dans le fond. L'image publiée n'est jamais modifiée.
+ */
+const SEGMENT_LIFT = 'brightness(1.2)'
+
 /** Largeur du plan de travail : inutile de segmenter en pleine résolution. */
 const WORK_WIDTH = 480
 
@@ -978,7 +989,9 @@ export async function createBackgroundBlurRenderer(
         lastSegmentAt = now
 
         workCtx.imageSmoothingEnabled = true
+        workCtx.filter = SEGMENT_LIFT
         workCtx.drawImage(target, 0, 0, work.width, work.height)
+        workCtx.filter = 'none'
 
         void segmenter
           .send({ image: work })

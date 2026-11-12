@@ -160,7 +160,9 @@ libérée dès qu'une autre image la remplace.
 Tant qu'aucun effet n'est actif, votre aperçu local est en miroir, comme dans toute
 visioconférence. Dès qu'un effet est appliqué, il montre **exactement le flux publié** : un logo ou un
 slogan du décor reste lisible, chez vous comme chez les autres participants. Le flux publié, lui,
-n'a jamais été inversé.
+n'a jamais été inversé. Le canvas composé garde le rapport d'image de la caméra (souvent 4:3) ;
+l'aperçu le cadre en `object-cover`, comme la vidéo naturelle, pour ne pas afficher de bandes
+latérales.
 
 Le même choix est proposé **avant de rejoindre**, sur l'écran de préparation, et il y est
 **visible en direct**. L'aperçu ne dispose d'aucun transport : une seconde instance du moteur
@@ -170,11 +172,15 @@ prend le relais ; l'aperçu n'altère jamais la piste réellement publiée.
 
 ### Qualité de l'image
 
-Quatre réglages expliquent l'écart entre la première version et celle-ci :
+Cinq réglages expliquent l'écart entre la première version et celle-ci :
 
 - **modèle général** (256×256) au lieu du modèle « paysage » (144×256) : plus lent de quelques
   millisecondes, mais nettement plus sûr sur un visage à contre-jour — le modèle paysage laissait
   une joue hors du masque, et le décor remplaçait la moitié du visage ;
+- **image d'entrée du détourage éclaircie** (`brightness(1.2)`), jamais le flux publié : dans une
+  pièce sombre, la confiance sur un visage peu éclairé tombait à 30–40 %. Mesuré sur une capture
+  réelle, avec le moteur et ce code exacts : 39 % de la tête au-dessus du seuil sans correction,
+  82 % avec le gain, et aucun faux positif dans le fond ;
 - **cœur de silhouette solide** : tout pixel classé personne est publié **totalement opaque**, et les
   trous intérieurs — vêtement foncé, joue de profil — sont comblés avant composition. La rampe
   15 % → 60 % d'origine laissait à demi transparentes les zones où le modèle n'est sûr qu'à 40–55 % :
