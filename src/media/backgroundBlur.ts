@@ -307,8 +307,9 @@ export function smoothMaskValues(
  * 59 Mo en 720p ; la cible les ramène à huit, soit 28 Mio (200 ms à 30 i/s).
  *
  * Ce n'est qu'une cible : sous huit images, l'historique ne couvrirait plus la
- * latence du détecteur, donc le plancher l'emporte au-delà d'environ 720p —
- * 28 Mio en 720p, 63 Mio en 1080p, 253 Mio en 4K.
+ * latence du détecteur. Elle est tenue jusqu'à 540p (douze images, 24 Mio) ;
+ * dès 720p le plancher l'emporte — 28 Mio en 720p, 63 Mio en 1080p, 253 Mio en
+ * 4K.
  */
 const FRAME_HISTORY_BUDGET = 24 * 1024 * 1024
 
@@ -322,9 +323,9 @@ const FRAME_HISTORY_MAX = 16
  * Nombre d'images d'historique pour une résolution donnée.
  *
  * Le nombre décroît avec la taille des images : la cible de 24 Mio est tenue
- * jusqu'à environ 720p. Au-delà, le plancher de huit images l'emporte et la
- * mémoire réelle dépasse la cible (63 Mio en 1080p), ce qui reste préférable à
- * un historique trop court, lequel casserait l'alignement du masque.
+ * jusqu'à 540p. Dès 720p, le plancher de huit images l'emporte et la mémoire
+ * réelle dépasse la cible (28 Mio en 720p, 63 Mio en 1080p), ce qui reste
+ * préférable à un historique trop court, lequel casserait l'alignement.
  */
 export function frameHistorySize(width: number, height: number): number {
   const bytesPerFrame = Math.max(1, width * height * 4)
