@@ -131,14 +131,13 @@ const MAX_FRAME_WIDTH = 1280
  * Seuil de confiance à partir duquel un pixel appartient **franchement** à la
  * personne (fraction de 255).
  *
- * Une rampe 15 % → 60 % rendait auparavant le premier plan totalement opaque
- * seulement au-delà de 60 % de confiance. Or le modèle rend 40–55 % sur une
- * joue de profil ou un vêtement foncé, c'est-à-dire sur des zones bien
- * réelles : elles restaient à demi transparentes et le décor se voyait au
- * travers du visage et des vêtements sombres. À 42 %, ces zones redeviennent
- * opaques ; le bruit de fond, lui, reste largement sous ce seuil.
+ * À 42 %, la joue d'un visage éclairé de côté restait hors de la silhouette :
+ * elle formait un trou franc, remplacé par le décor, alors que le contour du
+ * vêtement restait net. Le modèle n'y donne que 30–40 % de confiance. À 30 %,
+ * cette zone est retenue ; les pixels de fond isolés qui passent le seuil sont
+ * ensuite retirés par `despecklePersonMap`.
  */
-const MASK_SOLID_LEVEL = 0.42
+const MASK_SOLID_LEVEL = 0.3
 
 /** Même seuil, exprimé en valeur de masque entière (0–255). */
 const PERSON_LEVEL = Math.round(MASK_SOLID_LEVEL * 255)
@@ -151,6 +150,15 @@ const PERSON_LEVEL = Math.round(MASK_SOLID_LEVEL * 255)
  * visage.
  */
 const MASK_EDGE_LOW = 0.18
+
+/**
+ * Opacité maximale du liseré extérieur.
+ *
+ * Le pixel de fond collé à la silhouette ne doit pas devenir presque opaque :
+ * ce serait un cerne autour du visage. Il reste à demi transparent, juste de
+ * quoi adoucir la marche du masque une fois agrandi.
+ */
+const MASK_EDGE_MAX = 128
 
 /**
  * Part maximale de l'image qu'un trou intérieur peut occuper pour être comblé.
@@ -329,7 +337,7 @@ export function maskValueForPixel(red: number, alpha: number): number {
  * Cette rampe ne rend plus le corps translucide : tout pixel classé personne
  * est opaque (voir `applyPersonMask`). Elle adoucit uniquement le pixel de fond
  * collé à la silhouette, pour éviter une découpe crénelée une fois le masque
- * agrandi. À partir de 42 % de confiance, l'opacité est pleine ; sous 18 %, le
+ * agrandi. À partir de 30 % de confiance, l'opacité est pleine ; sous 18 %, le
  * pixel appartient franchement au décor.
  */
 export function maskOpacity(maskValue: number): number {
@@ -355,6 +363,45 @@ export function personMapFromMask(values: Uint8Array): Uint8Array {
     map[index] = values[index] >= PERSON_LEVEL ? 1 : 0
   }
   return map
+}
+
+/** Tampon du filtre anti-pixels isolés, réutilisé d'un masque à l'autre. */
+let speckleBuffer = new Uint8Array(0)
+
+/**
+ * Retire les pixels isolés de la carte personne, sur place.
+ *
+ * Un seuil bas rattrape les zones réelles peu sûres (joue dans l'ombre, tissu
+ * sombre), au prix de quelques pixels de fond classés personne. Un pixel
+ * personne qui n'a presque aucun voisin personne est du bruit : il est retiré.
+ * Une forme pleine, même étroite, garde ses voisins et reste intacte.
+ */
+export function despecklePersonMap(person: Uint8Array, width: number, height: number): void {
+  const total = width * height
+  if (total === 0 || person.length < total) return
+  if (speckleBuffer.length < total) speckleBuffer = new Uint8Array(total)
+  speckleBuffer.set(person.subarray(0, total))
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x
+      if (!speckleBuffer[index]) continue
+
+      let neighbours = 0
+      for (let dy = -1; dy <= 1 && neighbours <= 1; dy += 1) {
+        const ny = y + dy
+        if (ny < 0 || ny >= height) continue
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (dx === 0 && dy === 0) continue
+          const nx = x + dx
+          if (nx < 0 || nx >= width) continue
+          neighbours += speckleBuffer[ny * width + nx]
+        }
+      }
+
+      if (neighbours <= 1) person[index] = 0
+    }
+  }
 }
 
 /** Tampons réutilisés par `fillEnclosedHoles` : un masque est analysé ~12 fois/s. */
@@ -525,6 +572,7 @@ export function applyPersonMask(
   }
 
   const person = personMapFromMask(values)
+  despecklePersonMap(person, width, height)
   const holesFilled = fillEnclosedHoles(person, width, height)
 
   let personPixels = 0
@@ -536,8 +584,9 @@ export function applyPersonMask(
       opacity = 255
       personPixels += 1
     } else if (touchesPerson(person, width, height, index)) {
-      // Lisière : la confiance restante donne l'anticrénelage du contour.
-      opacity = maskOpacity(values[index])
+      // Lisière : la confiance restante donne l'anticrénelage du contour,
+      // sans jamais former un cerne opaque.
+      opacity = Math.min(MASK_EDGE_MAX, maskOpacity(values[index]))
     }
 
     data[offset] = 255

@@ -42,6 +42,7 @@ import {
   applyPersonMask,
   applyVideoEffect,
   applyVideoEffectWith,
+  despecklePersonMap,
   fillEnclosedHoles,
   fitCoverRect,
   maskMotion,
@@ -272,8 +273,8 @@ checks.push({
     expect(maskOpacity(0) === 0, 'fond → totalement transparent')
     expect(maskOpacity(255) === 255, 'personne → totalement opaque')
     expect(maskOpacity(26) === 0, 'bruit de fond éliminé')
-    expect(maskOpacity(153) === 255, 'confiance ≥ 42 % → opacité pleine')
-    expect(maskOpacity(82) > 0 && maskOpacity(82) < 255, 'liseré extérieur progressif')
+    expect(maskOpacity(153) === 255, 'confiance ≥ 30 % → opacité pleine')
+    expect(maskOpacity(60) > 0 && maskOpacity(60) < 255, 'liseré extérieur progressif')
 
     // Masque synthétique 8×8 : silhouette 4×4 au centre, fond autour.
     const size = 8
@@ -301,9 +302,19 @@ checks.push({
 
     // --- Cœur solide et trous intérieurs ----------------------------------
     expect(
-      personMapFromMask(Uint8Array.from([100, 200])).join('') === '01',
+      personMapFromMask(Uint8Array.from([70, 200])).join('') === '01',
       'seuil de confiance appliqué',
     )
+
+    // Un seuil bas rattrape la joue dans l'ombre, mais pas les pixels isolés.
+    const speckled = new Uint8Array(5 * 5)
+    for (let y = 1; y < 4; y += 1) {
+      for (let x = 1; x < 4; x += 1) speckled[y * 5 + x] = 1
+    }
+    speckled[0] = 1
+    despecklePersonMap(speckled, 5, 5)
+    expect(speckled[0] === 0, 'pixel isolé du fond retiré')
+    expect(speckled[2 * 5 + 2] === 1, 'cœur de la silhouette conservé')
 
     const ring = new Uint8Array(5 * 5)
     for (let y = 1; y < 4; y += 1) {

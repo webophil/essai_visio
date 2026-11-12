@@ -221,7 +221,7 @@ restaurée qu'à ~30 % d'opacité, et le fond flou transparaissait à travers le
 entière semblait floue.
 
 `applyPersonMask` lit désormais le rouge et l'alpha (équivalents), puis construit une carte
-« personne » au seuil de 42 % de confiance : tout pixel retenu est rendu **totalement opaque**.
+« personne » au seuil de 30 % de confiance : tout pixel retenu est rendu **totalement opaque**.
 Les trous intérieurs (vêtement foncé, joue de profil) sont comblés par un balayage depuis les bords
 du cadre — ce que ce balayage n'atteint pas est un intérieur de silhouette, pas du décor — dans la
 limite d'1 % de l'image ; au-delà, il s'agit d'un vrai jour (bras écarté du torse). Seul le pixel de
