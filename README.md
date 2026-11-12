@@ -186,9 +186,11 @@ Cinq réglages expliquent l'écart entre la première version et celle-ci :
   15 % → 60 % d'origine laissait à demi transparentes les zones où le modèle n'est sûr qu'à 40–55 % :
   le décor se voyait au travers du visage et des vêtements sombres. Seul le pixel de lisière reste
   progressif, pour l'anticrénelage ;
-- **masque à 256 px de large** (contre 160) et **lissage adaptatif** : à l'arrêt, la nouvelle mesure
-  ne pèse que 35 % du contour affiché et le stabilise ; dès que la silhouette bouge, elle monte
-  jusqu'à 95 %, pour ne plus laisser de traînée derrière la tête ;
+- **masque à 256 px de large** (contre 160) et **lissage de la confiance avant décision** : à
+  l'arrêt, la nouvelle mesure ne pèse que 35 % et le contour se stabilise ; en mouvement, elle monte
+  à 95 % pour ne pas laisser de traînée. Le lissage portait auparavant sur l'opacité finale : une
+  tête que le modèle hésitait à garder devenait à demi transparente, et le décor se voyait au
+  travers. Décider **après** le lissage donne des pixels franchement opaques ou transparents ;
 - **flou composé à l'agrandissement** : le fond est réduit d'un facteur 6 puis agrandi avec un
   rayon de 5 px. Un simple redimensionnement bilinéaire laissait des blocs visibles sur un mur uni ;
 - **calque « personne » à la résolution publiée** (1280 px au plus) et contour adouci sur 2 px de ce

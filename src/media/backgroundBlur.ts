@@ -252,44 +252,59 @@ export function maskSizeFor(
 }
 
 /**
- * Mélange le nouveau masque au précédent, **sur place**.
+ * État temporel du masque : confiance lissée et dernière mesure brute.
  *
- * Seul le canal alpha est lissé : c'est lui qui porte l'opacité du premier plan
- * après `applyPersonMask`. Un masque précédent de taille différente est ignoré
- * (rotation de caméra, changement de géométrie) : mieux vaut aucun lissage
- * qu'un contour décalé.
+ * Le lissage porte sur la **confiance**, jamais sur l'opacité finale. Mélanger
+ * des opacités binaires (0 ou 255) revient à moyenner des décisions : une tête
+ * que le modèle hésite à garder finissait à demi transparente, et le décor se
+ * voyait au travers. Lisser la confiance puis décider donne des pixels
+ * franchement opaques ou franchement transparents, avec un contour stable.
  */
-export function smoothMask(
-  previous: Uint8ClampedArray | null,
-  next: Uint8ClampedArray,
-  weight = MASK_SMOOTHING_STILL,
-): void {
-  if (!previous || previous.length !== next.length) return
-  const keep = 1 - weight
-  for (let index = 3; index < next.length; index += 4) {
-    next[index] = Math.round(previous[index] * keep + next[index] * weight)
-  }
+export interface MaskTemporalState {
+  /** Confiance lissée, une valeur par pixel du masque. */
+  values: Float32Array | null
+  /** Mesure brute de l'analyse précédente, pour estimer le mouvement. */
+  raw: Uint8Array | null
+}
+
+/** État temporel vide : la première analyse sème la mesure telle quelle. */
+export function createMaskTemporalState(): MaskTemporalState {
+  return { values: null, raw: null }
 }
 
 /**
- * Mouvement apparent de la silhouette entre l'ancien masque et le nouveau.
+ * Mouvement apparent du masque entre deux analyses (variation moyenne, 0–1).
  *
- * Renvoie la variation moyenne d'alpha (0–1). Le seuil de mouvement reste bas
- * parce qu'une tête qui tourne ne modifie qu'une petite fraction des pixels :
- * une moyenne plein cadre sous-estime largement le déplacement réel.
+ * Le seuil de mouvement reste bas parce qu'une tête qui tourne ne modifie
+ * qu'une petite fraction des pixels : une moyenne plein cadre sous-estime
+ * largement le déplacement réel.
  */
-export function maskMotion(
-  previous: Uint8ClampedArray | null,
-  next: Uint8ClampedArray,
-): number {
+export function maskValueMotion(previous: Uint8Array | null, next: Uint8Array): number {
   if (!previous || previous.length !== next.length) return 1
 
   let total = 0
-  for (let index = 3; index < next.length; index += 4) {
+  for (let index = 0; index < next.length; index += 1) {
     total += Math.abs(next[index] - previous[index])
   }
 
-  return total / (next.length / 4) / 255
+  return total / next.length / 255
+}
+
+/**
+ * Mélange les confiances du masque au précédent, **sur place**.
+ *
+ * Le poids vient de `smoothingWeight` : faible à l'arrêt (le contour se
+ * stabilise), fort en mouvement (il suit sans traînée).
+ */
+export function smoothMaskValues(
+  previous: Float32Array,
+  next: Uint8Array,
+  weight = MASK_SMOOTHING_STILL,
+): void {
+  const keep = 1 - weight
+  for (let index = 0; index < next.length; index += 1) {
+    previous[index] = previous[index] * keep + next[index] * weight
+  }
 }
 
 /**
@@ -563,6 +578,7 @@ export function applyPersonMask(
   data: Uint8ClampedArray,
   width: number,
   height: number,
+  state?: MaskTemporalState,
 ): MaskStats {
   const total = width * height
   if (total === 0 || data.length < total * 4) {
@@ -582,7 +598,23 @@ export function applyPersonMask(
     values[index] = maskValueForPixel(red, alpha)
   }
 
-  const person = personMapFromMask(values)
+  // Confiance lissée **avant** la décision : c'est elle qui porte l'hésitation
+  // du modèle. L'opacité publiée reste binaire, donc plus de tête à demi
+  // transparente.
+  let decided = values
+  if (state) {
+    if (!state.values || state.values.length !== total) {
+      state.values = new Float32Array(total)
+      for (let index = 0; index < total; index += 1) state.values[index] = values[index]
+    } else {
+      smoothMaskValues(state.values, values, smoothingWeight(maskValueMotion(state.raw, values)))
+    }
+    state.raw = values
+    decided = new Uint8Array(total)
+    for (let index = 0; index < total; index += 1) decided[index] = Math.round(state.values[index])
+  }
+
+  const person = personMapFromMask(decided)
   despecklePersonMap(person, width, height)
   const holesFilled = fillEnclosedHoles(person, width, height)
 
@@ -810,7 +842,7 @@ export async function createBackgroundBlurRenderer(
   let maskReady = false
   let segmenting = false
   let lastSegmentAt = 0
-  let previousMask: Uint8ClampedArray | null = null
+  const maskState = createMaskTemporalState()
   let heldMasks = 0
 
   let canvas: HTMLCanvasElement | null = null
@@ -870,7 +902,7 @@ export async function createBackgroundBlurRenderer(
     maskCtx.drawImage(segmentationMask, 0, 0, mask.width, mask.height)
 
     const frame = maskCtx.getImageData(0, 0, mask.width, mask.height)
-    const maskStats = applyPersonMask(frame.data, mask.width, mask.height)
+    const maskStats = applyPersonMask(frame.data, mask.width, mask.height, maskState)
     maskRedMean = maskStats.redMean
     maskAlphaMean = maskStats.alphaMean
 
@@ -889,10 +921,6 @@ export async function createBackgroundBlurRenderer(
 
     heldMasks = 0
     personCoverage = maskStats.coverage
-
-    // Lissage adaptatif : stable à l'arrêt, quasi instantané en mouvement.
-    smoothMask(previousMask, frame.data, smoothingWeight(maskMotion(previousMask, frame.data)))
-    previousMask = new Uint8ClampedArray(frame.data)
 
     maskCtx.putImageData(frame, 0, 0)
     diagnostics?.update(mask, maskStats)
@@ -1099,7 +1127,8 @@ export async function createBackgroundBlurRenderer(
       mask.width = maskSize.width
       mask.height = maskSize.height
       maskReady = false
-      previousMask = null
+      maskState.values = null
+      maskState.raw = null
       heldMasks = 0
       personCoverage = 0
 

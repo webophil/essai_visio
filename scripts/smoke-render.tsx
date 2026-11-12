@@ -42,18 +42,19 @@ import {
   applyPersonMask,
   applyVideoEffect,
   applyVideoEffectWith,
+  createMaskTemporalState,
   despecklePersonMap,
   fillEnclosedHoles,
   fitCoverRect,
-  maskMotion,
   maskOpacity,
   maskSizeFor,
   maskValueForPixel,
+  maskValueMotion,
   normalizedFrameSize,
   normalizedWorkSize,
   personMapFromMask,
   readVideoEffectStats,
-  smoothMask,
+  smoothMaskValues,
   smoothingWeight,
 } from '../src/media/backgroundBlur'
 import { BACKDROP_PRESETS, backdropPreset } from '../src/media/backdrops'
@@ -391,32 +392,40 @@ checks.push({
     expect(Math.abs(portrait.y * 2 + portrait.height - 720) < 0.001, 'rognage centré')
     expect(fitCoverRect(0, 0, 1280, 720).width === 1280, 'taille inconnue → cadre complet')
 
-    // Lissage temporel : le contour ne doit plus scintiller d'une image à l'autre.
-    const previous = new Uint8ClampedArray(2 * 4)
-    previous[3] = 200
-    const next = new Uint8ClampedArray(2 * 4)
-    next[3] = 100
-    smoothMask(previous, next, 0.5)
-    expect(next[3] === 150, 'masque mélangé au précédent')
-    expect(next[7] === 0, 'fond lissé reste transparent')
-
-    const untouched = new Uint8ClampedArray(8)
-    untouched[3] = 90
-    smoothMask(new Uint8ClampedArray(4), untouched, 0.5)
-    expect(untouched[3] === 90, 'taille différente → aucun mélange (masque intact)')
+    // Lissage temporel de la confiance, avant la décision d'opacité.
+    const previousValues = new Float32Array([100, 0])
+    smoothMaskValues(previousValues, Uint8Array.from([200, 0]), 0.5)
+    expect(previousValues[0] === 150, 'confiance mélangée au précédent')
+    expect(previousValues[1] === 0, 'fond lissé reste à zéro')
 
     // Lissage adaptatif : stable à l'arrêt, quasi instantané en mouvement.
-    const still = new Uint8ClampedArray(4 * 4)
-    const elsewhere = new Uint8ClampedArray(4 * 4)
-    for (let index = 3; index < still.length; index += 4) still[index] = 120
-    for (let index = 3; index < elsewhere.length; index += 4) elsewhere[index] = 240
+    const still = Uint8Array.from([120, 120, 120, 120])
+    const elsewhere = Uint8Array.from([240, 240, 240, 240])
 
-    expect(maskMotion(still, still) === 0, 'masque identique → aucun mouvement')
-    expect(maskMotion(null, still) === 1, 'premier masque → mouvement maximal')
-    expect(maskMotion(still, elsewhere) > 0.4, 'changement net mesuré')
+    expect(maskValueMotion(still, still) === 0, 'masque identique → aucun mouvement')
+    expect(maskValueMotion(null, still) === 1, 'premier masque → mouvement maximal')
+    expect(maskValueMotion(still, elsewhere) > 0.4, 'changement net mesuré')
     expect(smoothingWeight(0) < 0.4, 'à l’arrêt, le masque est fortement lissé')
     expect(smoothingWeight(1) > 0.9, 'en mouvement, la mesure fraîche domine')
     expect(smoothingWeight(0.1) > smoothingWeight(0), 'poids croissant avec le mouvement')
+
+    // Une zone hésitante finit franchement opaque, jamais à demi transparente :
+    // la décision est prise après le lissage de la confiance.
+    const state = createMaskTemporalState()
+    const marginal = new Uint8ClampedArray(4 * 4)
+    for (let index = 0; index < marginal.length; index += 4) {
+      marginal[index] = 60
+      marginal[index + 3] = 60
+    }
+    expect(applyPersonMask(marginal, 2, 2, state).coverage === 0, 'confiance faible → fond')
+
+    const strong = new Uint8ClampedArray(4 * 4)
+    for (let index = 0; index < strong.length; index += 4) {
+      strong[index] = 200
+      strong[index + 3] = 200
+    }
+    expect(applyPersonMask(strong, 2, 2, state).coverage === 1, 'confiance franche → silhouette')
+    expect(strong[3] === 255, 'opacité binaire, jamais partielle')
   },
 })
 
