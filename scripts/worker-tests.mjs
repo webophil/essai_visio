@@ -148,7 +148,29 @@ globalThis.fetch = async (input, init = {}) => {
 
   if (path.endsWith('/presets') && method === 'GET') {
     return new Response(
-      JSON.stringify({ success: true, data: [{ name: 'group_call_host' }, { name: 'group_call_participant' }] }),
+      JSON.stringify({
+        success: true,
+        data: [
+          {
+            name: 'group_call_host',
+            permissions: {
+              chat: {
+                public: { can_send: true, text: true, files: true },
+                private: { can_send: true, text: true, files: false, can_receive: true },
+              },
+            },
+          },
+          {
+            name: 'group_call_participant',
+            permissions: {
+              chat: {
+                public: { can_send: true, text: true, files: true },
+                private: { can_send: true, text: false, files: false, can_receive: true },
+              },
+            },
+          },
+        ],
+      }),
       { status: 200 },
     )
   }
@@ -291,8 +313,13 @@ await testAsync('la CSP bloque réellement et HSTS protège le domaine', async (
   const policy = response.headers.get('Content-Security-Policy') ?? ''
 
   assert.match(policy, /frame-ancestors 'none'/, 'intégration iframe non bloquée')
-  assert.match(policy, /connect-src 'self' https:\/\/api\.realtime\.cloudflare\.com/, 'connect-src incomplète')
-  assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/, 'script-src incomplète')
+      assert.match(policy, /connect-src 'self' https:\/\/api\.realtime\.cloudflare\.com/, 'connect-src incomplète')
+    assert.match(
+      policy,
+      /img-src[^;]*https:\/\/r2\.cloudflarestorage\.com/,
+      "hôte des pièces jointes absent de img-src",
+    )
+    assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/, 'script-src incomplète')
   assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains')
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY')
 })
@@ -627,6 +654,16 @@ await testAsync('le diagnostic exige la session et ne renvoie aucun secret', asy
   assert.equal(report.apiTokenPresent, true)
   assert.equal(report.presetsRead, 'ok')
   assert.deepEqual(report.presetsAvailable, ['group_call_host', 'group_call_participant'])
+
+  // Permissions de chat réellement lues, sans jeton ni identifiant.
+  assert.equal(report.presetPermissions?.host?.name, 'group_call_host')
+  assert.equal(report.presetPermissions?.guest?.name, 'group_call_participant')
+  assert.equal(report.presetPermissions.host.chat.public.text, true)
+  assert.equal(report.presetPermissions.host.chat.public.files, true)
+  assert.equal(report.presetPermissions.guest.chat.public.files, true)
+  assert.equal(report.presetPermissions.host.chat.private.files, false)
+  assert.equal(report.presetPermissions.host.chat.private.canReceive, true)
+  assert.equal(JSON.stringify(report).includes(API_TOKEN), false, 'jeton d’API divulgué')
 })
 
 group('Invitations par e-mail')

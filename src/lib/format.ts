@@ -83,6 +83,25 @@ export function formatClockTime(milliseconds: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/**
+ * Taille d'un fichier lisible : `512 o`, `12 Ko`, `1,4 Mo`.
+ * Renvoie une chaîne vide quand la taille n'est pas connue.
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+
+  const units = ['o', 'Ko', 'Mo', 'Go']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+
+  const rounded = unit === 0 || value >= 10 ? Math.round(value) : Math.round(value * 10) / 10
+  return `${String(rounded).replace('.', ',')} ${units[unit]}`
+}
+
 /** Accord simple pour les compteurs (« 1 participant », « 2 participants »). */
 export function pluralize(count: number, singular: string, plural: string): string {
   return count > 1 ? plural : singular

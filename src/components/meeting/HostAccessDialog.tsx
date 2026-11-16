@@ -7,7 +7,7 @@ import { StatusPill } from '../ui/StatusPill'
 import { TextField } from '../ui/TextField'
 import { clearHostSession, readHostSession, saveHostSession } from '../../meeting/hostSession'
 import { MeetingApiError, fetchDiagnostic, openHostSession } from '../../meeting/rtkApi'
-import type { DiagnosticReport } from '../../meeting/rtkApi'
+import type { DiagnosticReport, PresetPermissionDetail } from '../../meeting/rtkApi'
 
 export interface HostAccessDialogProps {
   open: boolean
@@ -199,12 +199,31 @@ export function HostAccessDialog({ open, onClose, onSuccess }: HostAccessDialogP
                     : 'aucun renvoyé'
                 }
               />
+              <DiagnosticRow
+                label="Chat organisateur"
+                value={presetChatLabel(diagnostic.presetPermissions?.host)}
+              />
+              <DiagnosticRow
+                label="Chat participant"
+                value={presetChatLabel(diagnostic.presetPermissions?.guest)}
+              />
             </dl>
           ) : null}
         </div>
       </div>
     </div>
   )
+}
+
+/**
+ * Résumé lisible des permissions de chat d'un preset.
+ * Seuls les drapeaux demandés à Cloudflare sont affichés, sans identifiant.
+ */
+function presetChatLabel(preset: PresetPermissionDetail | null | undefined): string {
+  if (!preset) return 'preset introuvable'
+
+  const flag = (value: boolean) => (value ? 'oui' : 'non')
+  return `texte ${flag(preset.chat.public.text)} · fichiers ${flag(preset.chat.public.files)}`
 }
 
 function DiagnosticRow({ label, value }: { label: string; value: string }) {

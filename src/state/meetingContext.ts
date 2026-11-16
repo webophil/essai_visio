@@ -52,6 +52,8 @@ export interface MeetingContextValue {
   chat: ChatState
   /** Envoie un message aux participants connectés (`true` si accepté). */
   sendChatMessage: (text: string) => Promise<boolean>
+  /** Envoie une pièce jointe (`true` si acceptée par la réunion). */
+  sendChatFile: (file: File, kind: 'image' | 'file') => Promise<boolean>
 
   /** Effet vidéo local actif (aucun effet par défaut). */
   videoEffect: VideoEffectChoice

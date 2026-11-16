@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { MessageSquare, Send } from 'lucide-react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { Download, FileText, MessageSquare, Paperclip, Send } from 'lucide-react'
 
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
 import { SidePanel } from '../ui/SidePanel'
 import { isScrolledToBottom } from '../../lib/chatScroll'
-import { formatClockTime } from '../../lib/format'
+import { formatClockTime, formatFileSize } from '../../lib/format'
 import { NOTICES } from '../../lib/notices'
 import { useMeeting } from '../../state/meetingContext'
-import type { ChatMessageView } from '../../types/meeting'
+import type { ChatAttachmentView, ChatMessageView } from '../../types/meeting'
+
+/**
+ * Types d'images dont le SDK affiche un aperçu.
+ * Les autres formats (dont le SVG, écarté pour des raisons de sécurité)
+ * partent comme fichiers, sans aperçu.
+ */
+const PREVIEWABLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif'])
 
 /**
  * Messagerie de réunion.
@@ -20,9 +27,10 @@ import type { ChatMessageView } from '../../types/meeting'
  * d'afficher une saisie sans effet.
  */
 export function ChatPanel() {
-  const { closePanel, chat, sendChatMessage } = useMeeting()
+  const { closePanel, chat, sendChatMessage, sendChatFile } = useMeeting()
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   // Vrai tant que l'utilisateur n'a pas remonté le fil volontairement.
   const stickToBottom = useRef(true)
 
@@ -41,7 +49,17 @@ export function ChatPanel() {
   }
 
   const canWrite = chat.available && chat.canSend
+  const canAttach = canWrite && chat.canSendFiles
   const busy = chat.sending
+
+  /** Ramène le fil en bas après un envoi accepté. */
+  const revealLastMessage = () => {
+    stickToBottom.current = true
+    requestAnimationFrame(() => {
+      const node = listRef.current
+      if (node) node.scrollTop = node.scrollHeight
+    })
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -54,13 +72,22 @@ export function ChatPanel() {
     if (sent) {
       // Envoyer est un geste explicite : on revient au dernier message, même si
       // l'utilisateur lisait plus haut.
-      stickToBottom.current = true
-      requestAnimationFrame(() => {
-        const node = listRef.current
-        if (node) node.scrollTop = node.scrollHeight
-      })
+      revealLastMessage()
       setDraft((current) => (current.trim() === text ? '' : current))
     }
+  }
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0] ?? null
+    // Le champ est vidé tout de suite : choisir deux fois le même fichier doit
+    // déclencher deux envois.
+    input.value = ''
+    if (!file || !canAttach || busy) return
+
+    const kind = PREVIEWABLE_IMAGE_TYPES.has(file.type) ? 'image' : 'file'
+    const sent = await sendChatFile(file, kind)
+    if (sent) revealLastMessage()
   }
 
   return (
@@ -71,6 +98,24 @@ export function ChatPanel() {
       footer={
         <form className="flex flex-col gap-2" onSubmit={(event) => void handleSubmit(event)}>
           <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(event) => void handleFileChange(event)}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-11"
+              disabled={!canAttach || busy}
+              aria-label="Joindre un fichier"
+              title={canAttach ? 'Joindre un fichier' : 'Pièces jointes non autorisées'}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip aria-hidden="true" className="size-4" />
+            </Button>
             <input
               type="text"
               value={draft}
@@ -95,7 +140,11 @@ export function ChatPanel() {
           </div>
 
           <p className="text-[11px] leading-relaxed text-slate-500">
-            {canWrite ? 'Entrée pour envoyer' : 'La saisie est désactivée : aucun message ne peut être envoyé.'}
+            {canWrite
+              ? canAttach
+                ? 'Entrée pour envoyer'
+                : 'Entrée pour envoyer · pièces jointes non autorisées'
+              : 'La saisie est désactivée : aucun message ne peut être envoyé.'}
           </p>
         </form>
       }
@@ -172,9 +221,61 @@ function ChatBubble({ message }: { message: ChatMessageView }) {
           {formatClockTime(message.sentAt)}
         </time>
       </header>
-      <p className="text-sm leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-slate-100">
-        {message.text}
-      </p>
+      {message.attachment ? <ChatAttachment attachment={message.attachment} /> : null}
+      {message.text ? (
+        <p className="text-sm leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-slate-100">
+          {message.text}
+        </p>
+      ) : null}
     </article>
+  )
+}
+
+/**
+ * Pièce jointe d'un message.
+ * L'image s'ouvre en grand dans un nouvel onglet ; le fichier se télécharge.
+ * La carte garde la largeur de la bulle : le panneau ne s'élargit jamais.
+ */
+function ChatAttachment({ attachment }: { attachment: ChatAttachmentView }) {
+  if (attachment.kind === 'image') {
+    return (
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 block min-w-0"
+        title={attachment.name}
+      >
+        <img
+          src={attachment.url}
+          alt={attachment.name}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="max-h-56 w-full rounded-lg object-contain"
+        />
+      </a>
+    )
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      download={attachment.name}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-1 flex min-w-0 items-center gap-2 rounded-lg border border-ink-600 px-2 py-1.5"
+      title={attachment.name}
+    >
+      <FileText aria-hidden="true" className="size-4 shrink-0 text-slate-400" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs text-slate-200">{attachment.name}</span>
+        {attachment.size > 0 ? (
+          <span className="block font-mono text-[10px] text-slate-500">
+            {formatFileSize(attachment.size)}
+          </span>
+        ) : null}
+      </span>
+      <Download aria-hidden="true" className="size-4 shrink-0 text-slate-400" />
+    </a>
   )
 }

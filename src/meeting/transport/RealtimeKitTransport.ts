@@ -38,6 +38,12 @@ interface ChatMessageLike {
   userId: string
   displayName?: string
   message?: string
+  /** Adresse de la pièce jointe (image ou fichier). */
+  link?: string
+  /** Nom d'origine de la pièce jointe. */
+  name?: string
+  /** Taille de la pièce jointe, en octets. */
+  size?: number
   time?: Date
   timeMs?: number
   targetUserIds?: string[]
@@ -152,6 +158,40 @@ export class RealtimeKitTransport implements MeetingTransport {
 
     try {
       await client.chat.sendTextMessage(trimmed)
+      this.refreshChat(client)
+      this.setChat({ sending: false })
+      return true
+    } catch (error) {
+      this.setChat({ sending: false, error: describeChatError(error) })
+      return false
+    }
+  }
+
+  /**
+   * Envoie une pièce jointe dans la salle.
+   *
+   * Les images passent par `sendImageMessage` — les destinataires voient un
+   * aperçu — et tout le reste par `sendFileMessage`. Le fichier transite par la
+   * messagerie de la réunion : l'application n'en garde aucune copie.
+   */
+  async sendChatFile(file: File, kind: 'image' | 'file'): Promise<boolean> {
+    const client = this.client
+    if (!client || !file) return false
+
+    if (!this.chat.available || !this.chat.canSend || !this.chat.canSendFiles) {
+      this.setChat({
+        error:
+          this.chat.unavailableReason ??
+          "L'envoi de pièces jointes n'est pas autorisé dans cette réunion.",
+      })
+      return false
+    }
+
+    this.setChat({ sending: true, error: null })
+
+    try {
+      if (kind === 'image') await client.chat.sendImageMessage(file)
+      else await client.chat.sendFileMessage(file)
       this.refreshChat(client)
       this.setChat({ sending: false })
       return true
@@ -553,7 +593,7 @@ function readMaxTextLength(client: RTKClient): number {
  */
 function readChatPermissions(
   client: RTKClient,
-): Pick<ChatState, 'available' | 'canSend' | 'unavailableReason'> {
+): Pick<ChatState, 'available' | 'canSend' | 'canSendFiles' | 'unavailableReason'> {
   try {
     const chat = client.self.permissions?.chatPublic
 
@@ -561,6 +601,7 @@ function readChatPermissions(
       return {
         available: false,
         canSend: false,
+        canSendFiles: false,
         unavailableReason: "La messagerie n’est pas disponible pour le moment.",
       }
     }
@@ -569,6 +610,7 @@ function readChatPermissions(
       return {
         available: false,
         canSend: false,
+        canSendFiles: false,
         unavailableReason:
           "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
       }
@@ -577,6 +619,8 @@ function readChatPermissions(
     return {
       available: true,
       canSend: chat.canSend,
+      // Drapeau distinct du texte : un profil peut autoriser l'un sans l'autre.
+      canSendFiles: chat.files === true,
       unavailableReason: chat.canSend
         ? null
         : "Vous pouvez lire les messages, mais l’envoi n’est pas autorisé dans cette réunion.",
@@ -585,6 +629,7 @@ function readChatPermissions(
     return {
       available: false,
       canSend: false,
+      canSendFiles: false,
       unavailableReason: "La messagerie n’est pas disponible pour le moment.",
     }
   }
@@ -597,24 +642,48 @@ function messageTime(message: ChatMessageLike): number {
   return Date.now()
 }
 
-/** Traduit un message du SDK en vue affichable, ou `null` s'il n'est pas textuel. */
+/**
+ * Traduit un message du SDK en vue affichable.
+ * Textes, images et fichiers sont acceptés ; tout autre type est ignoré.
+ */
 function toChatView(message: ChatMessageLike, selfUserId: string): ChatMessageView | null {
-  if (message.type !== 'text') return null
-
-  const text = (message.message ?? '').trim()
-  if (text.length === 0) return null
-
   // Message adressé à certains participants : il n'apparaît pas dans le canal
   // public du panneau.
   if (Array.isArray(message.targetUserIds) && message.targetUserIds.length > 0) return null
 
-  return {
+  const base = {
     id: message.id,
     authorName: message.displayName?.trim() || 'Participant',
     isLocal: message.userId === selfUserId,
     sentAt: messageTime(message),
-    text,
   }
+
+  if (message.type === 'text') {
+    const text = (message.message ?? '').trim()
+    return text.length === 0 ? null : { ...base, text }
+  }
+
+  if (message.type === 'image' || message.type === 'file') {
+    const url = (message.link ?? '').trim()
+    if (url.length === 0) return null
+
+    return {
+      ...base,
+      text: '',
+      attachment: {
+        kind: message.type,
+        url,
+        name:
+          (message.name ?? '').trim() || (message.type === 'image' ? 'Image' : 'Fichier'),
+        size:
+          typeof message.size === 'number' && Number.isFinite(message.size) && message.size > 0
+            ? message.size
+            : 0,
+      },
+    }
+  }
+
+  return null
 }
 
 /** Fusion sans doublon (les messages peuvent arriver par l'historique et par événement). */

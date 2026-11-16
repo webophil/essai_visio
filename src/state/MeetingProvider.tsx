@@ -274,6 +274,12 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
     [transport],
   )
 
+  const sendChatFile = useCallback(
+    async (file: File, kind: 'image' | 'file') =>
+      transport ? transport.sendChatFile(file, kind) : false,
+    [transport],
+  )
+
   /** Active ou retire un effet de fond local (flou ou décor). */
   const setVideoEffect = useCallback(
     async (choice: VideoEffectChoice) => {
@@ -363,6 +369,7 @@ export function MeetingProvider({ meetingId, realtimeKitId, children }: MeetingP
     session,
     chat,
     sendChatMessage,
+    sendChatFile,
     videoEffect,
     setVideoEffect,
     videoEffectBusy,

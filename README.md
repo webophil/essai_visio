@@ -104,10 +104,18 @@ Le panneau Chat est branché sur la **messagerie native** du SDK (`client.chat`)
 - lecture de l'historique public à l'entrée en salle (`fetchPublicMessages`) puis réception en
 direct (`chatUpdate`) ;
 - envoi par `sendTextMessage`, avec la limite de longueur annoncée par le SDK ;
+- pièces jointes : images par `sendImageMessage` (aperçu chez les destinataires), autres fichiers
+  par `sendFileMessage` (carte avec nom, taille et téléchargement) ; PNG, JPEG et GIF sont
+  prévisualisés, tout le reste part comme fichier ;
 - auteur, heure et contenu affichés, défilement automatique, saisie pleine largeur sur mobile ;
 - disponibilité lue dans le preset du participant (`permissions.chatPublic`) : si le profil
-  n'autorise pas l'écrit, le panneau le dit et la saisie reste désactivée ;
-- aucune persistance : l'application ne stocke aucun message et n'en relit aucun après la réunion.
+  n'autorise pas l'écrit, le panneau le dit et la saisie reste désactivée ; le droit aux pièces
+  jointes est distinct (`chatPublic.files`) et désactive le trombone avec une explication ;
+- aucune copie par l'application. Cloudflare conserve le chat et les pièces jointes le temps de la
+  réunion pour le rejeu ; l'application ne les relit jamais après coup.
+
+Le diagnostic organisateur affiche les permissions de chat réellement configurées pour les deux
+presets (texte et fichiers), lues par `GET /presets` — aucun identifiant n'y est renvoyé.
 
 ## Mise en page de la salle
 
@@ -445,6 +453,7 @@ main, depuis l'adresse de prévisualisation.
 | 4. Vidéo : activer puis couper la caméra de chaque côté | Les vignettes suivent l'état réel, la voix continue de passer |
 | 5. Partage d'écran depuis un PC | L'écran occupe la scène, les caméras passent en vignettes, le son du partage est audible |
 | 6. Chat : un message depuis chaque PC | Message affiché avec auteur et heure des deux côtés ; si le preset interdit l'écrit, le panneau l'explique au lieu d'échouer |
+| 6 ter. Envoyer une image puis un PDF depuis chaque PC | L'image s'affiche avec un aperçu, le PDF apparaît comme une carte téléchargeable ; sans le droit « fichiers » du preset, le trombone est désactivé et l'aide l'explique |
 | 6 bis. Sur l'écran « Rejoindre », choisir « Flou » puis « Ardoise », puis entrer | L'aperçu de préparation montre immédiatement le flou ou le décor, sans miroir ; dès l'entrée, le flux publié porte le même effet, chez vous comme chez l'autre participant |
 | 7. Effets : « Flou » sur un PC | **Visage et silhouette parfaitement nets**, arrière-plan flou **chez vous et chez l'autre participant**, sans contour qui scintille quand vous bougez la tête ; le retour à « Aucun effet » rétablit l'image d'origine |
 | 7 bis. Effets : « Studio », puis « Ardoise », puis une **image importée** | Le fond change en une à deux secondes, la silhouette reste nette et ses bords ne bavent pas sur le décor ; une image portrait est rognée et centrée, jamais étirée ; « Retirer » revient à la caméra d'origine |
@@ -510,8 +519,9 @@ Deux règles :
 `Strict-Transport-Security: max-age=31536000; includeSubDomains`. La politique autorise les hôtes
 réellement utilisés par le SDK : API `api.realtime.cloudflare.com`, signaling
 `wss://*.realtime.cloudflare.com`, et les domaines `dyte.in` / `dyte.io` que RealtimeKit (bâti sur
-Dyte) porte encore dans son code. Le beacon d'analytics de la plateforme reste bloqué : il lit
-`localStorage`.
+Dyte) porte encore dans son code. `r2.cloudflarestorage.com` est autorisé en `connect-src`,
+`img-src` et `media-src` : c'est l'hôte documenté du stockage du chat, donc celui des aperçus et des
+pièces jointes. Le beacon d'analytics de la plateforme reste bloqué : il lit `localStorage`.
 
 Retour arrière d'urgence : repasser `CSP_ENFORCED` à `false` et redéployer — la politique redevient
 un simple rapport, sans blocage.

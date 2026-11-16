@@ -43,6 +43,20 @@ export interface HostSession {
   expiresAt: number
 }
 
+/** Drapeaux de chat d'un preset, tels que configurés dans le tableau de bord. */
+export interface PresetChatFlags {
+  canSend: boolean
+  text: boolean
+  files: boolean
+  canReceive: boolean
+}
+
+/** Preset et permissions de chat, sans aucune donnée sensible. */
+export interface PresetPermissionDetail {
+  name: string
+  chat: { public: PresetChatFlags; private: PresetChatFlags }
+}
+
 export interface DiagnosticReport {
   apiTokenPresent: boolean
   hostKeyPresent: boolean
@@ -51,6 +65,11 @@ export interface DiagnosticReport {
   presetsExpected: { host: string; guest: string }
   presetsRead: string | null
   presetsAvailable: string[] | null
+  /** Permissions lues pour les deux presets utilisés (null si illisibles). */
+  presetPermissions?: {
+    host: PresetPermissionDetail | null
+    guest: PresetPermissionDetail | null
+  } | null
   maxParticipants: number
 }
 

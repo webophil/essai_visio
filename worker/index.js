@@ -46,7 +46,7 @@ import {
   hasParticipant,
   isUuid,
   listParticipants,
-  listPresets,
+  listPresetPermissions,
   presets,
 } from './realtimekit.js'
 import { APP_VERSION, BUILD_COMMIT, BUILD_COMMIT_DATE } from './version.js'
@@ -574,12 +574,18 @@ async function handleDiagnostic(request, env) {
     maxParticipants: MAX_PARTICIPANTS,
     presetsRead: null,
     presetsAvailable: null,
+    presetPermissions: null,
   }
 
   try {
-    const names = await listPresets(env)
+    const details = await listPresetPermissions(env)
     report.presetsRead = 'ok'
-    report.presetsAvailable = names
+    report.presetsAvailable = details.map((preset) => preset.name)
+    // Permissions réellement configurées : lecture seule, aucun identifiant.
+    report.presetPermissions = {
+      host: details.find((preset) => preset.name === config.hostPreset) ?? null,
+      guest: details.find((preset) => preset.name === config.guestPreset) ?? null,
+    }
   } catch (error) {
     report.presetsRead = error instanceof RealtimeKitError ? `${error.status}` : 'erreur'
     report.presetsError = error instanceof RealtimeKitError ? error.code : null

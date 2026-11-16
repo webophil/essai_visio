@@ -218,6 +218,38 @@ export async function listPresets(env) {
 }
 
 /**
+ * Presets avec leurs permissions de chat, sans aucune donnée sensible.
+ *
+ * `GET /presets` renvoie les drapeaux réellement configurés dans le tableau de
+ * bord : c'est la seule façon de savoir si l'envoi de fichiers est autorisé
+ * pour les profils organisateur et invité. Aucun jeton ni identifiant n'est lu.
+ */
+export async function listPresetPermissions(env) {
+  const payload = await request(env, { method: 'GET', path: '/presets' })
+  const data = Array.isArray(payload?.data) ? payload.data : []
+
+  return data
+    .filter((preset) => typeof preset?.name === 'string')
+    .map((preset) => ({
+      name: preset.name,
+      chat: {
+        public: readChatFlags(preset?.permissions?.chat?.public),
+        private: readChatFlags(preset?.permissions?.chat?.private),
+      },
+    }))
+}
+
+/** Drapeaux de chat d'un preset ; un drapeau absent vaut « refusé ». */
+function readChatFlags(chat) {
+  return {
+    canSend: chat?.can_send === true,
+    text: chat?.text === true,
+    files: chat?.files === true,
+    canReceive: chat?.can_receive === true,
+  }
+}
+
+/**
  * Nombre d'emplacements occupés dans une réunion.
  *
  * Le comptage se fait sur les identifiants participants **distincts** : une

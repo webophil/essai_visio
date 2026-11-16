@@ -68,6 +68,13 @@ export interface MeetingTransport {
    */
   sendChatMessage(text: string): Promise<boolean>
 
+  /**
+   * Envoie une pièce jointe aux participants connectés.
+   * `kind` choisit l'aperçu image ou la carte de fichier ; renvoie `true`
+   * quand le SDK a accepté l'envoi.
+   */
+  sendChatFile(file: File, kind: 'image' | 'file'): Promise<boolean>
+
   /** Client RealtimeKit, exposé uniquement à l'interface de la salle. */
   getClient(): RTKClient | null
 

@@ -45,7 +45,9 @@ export const STRICT_TRANSPORT_SECURITY = 'max-age=31536000; includeSubDomains'
  *   est bâti sur Dyte) : ils apparaissent dans le bundle publié et servent de
  *   repli si Cloudflare renvoie une URL de signaling historique.
  * - `r2.cloudflarestorage.com` est documenté pour le stockage des messages de
- *   chat ; à retirer si le test réel ne l'utilise pas.
+ *   chat. Il est autorisé en `connect-src` (envoi et récupération) ainsi qu'en
+ *   `img-src` et `media-src` : les aperçus et les pièces jointes sont servis
+ *   depuis cet hôte, et seraient autrement refusés à l'affichage.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -55,8 +57,8 @@ export const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self'",
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
+  "img-src 'self' data: blob: https://r2.cloudflarestorage.com",
+  "media-src 'self' blob: https://r2.cloudflarestorage.com",
   "font-src 'self'",
   "connect-src 'self' https://api.realtime.cloudflare.com wss://api.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://*.dyte.in wss://*.dyte.in https://*.dyte.io wss://*.dyte.io https://r2.cloudflarestorage.com",
   "worker-src 'self'",

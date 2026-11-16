@@ -599,6 +599,7 @@ checks.push({
       chat: {
         available: true,
         canSend: true,
+        canSendFiles: true,
         sending: false,
         error: null,
         unavailableReason: null,
@@ -614,6 +615,7 @@ checks.push({
         ],
       },
       sendChatMessage: async () => true,
+      sendChatFile: async () => true,
     } as unknown as MeetingContextValue
 
     const html = renderToStaticMarkup(
@@ -1181,13 +1183,22 @@ checks.push({
   run: () => {
     const renderChat = (
       available: boolean,
-      messages: { id: string; text: string; authorName: string; isLocal: boolean; sentAt: number }[] = [],
+      messages: {
+        id: string
+        text: string
+        authorName: string
+        isLocal: boolean
+        sentAt: number
+        attachment?: { kind: 'image' | 'file'; url: string; name: string; size: number }
+      }[] = [],
+      canSendFiles = true,
     ) => {
       const context = {
         closePanel: () => {},
         chat: {
           available,
           canSend: available,
+          canSendFiles,
           sending: false,
           error: null,
           unavailableReason: available
@@ -1197,6 +1208,7 @@ checks.push({
           messages,
         },
         sendChatMessage: async () => true,
+        sendChatFile: async () => true,
       } as unknown as MeetingContextValue
 
       return renderToStaticMarkup(
@@ -1217,6 +1229,51 @@ checks.push({
       'mention discrète de conservation',
     )
     expect(!empty.includes('Messages non conservés'), 'encadré de conservation retiré')
+    expect(empty.includes('Joindre un fichier'), 'bouton de pièce jointe présent')
+
+    // Pièces jointes : aperçu d'image, carte de fichier, taille lisible.
+    const withImage = renderChat(true, [
+      {
+        id: 'img',
+        text: '',
+        authorName: 'Aurore',
+        isLocal: false,
+        sentAt: 3,
+        attachment: {
+          kind: 'image',
+          url: 'https://r2.cloudflarestorage.com/piece/photo.png',
+          name: 'photo.png',
+          size: 2048,
+        },
+      },
+    ])
+    expect(withImage.includes('<img'), 'aperçu image rendu')
+    expect(withImage.includes('photo.png'), 'nom de l’image accessible')
+
+    const withFile = renderChat(true, [
+      {
+        id: 'doc',
+        text: '',
+        authorName: 'Aurore',
+        isLocal: false,
+        sentAt: 4,
+        attachment: {
+          kind: 'file',
+          url: 'https://r2.cloudflarestorage.com/piece/devis.pdf',
+          name: 'devis.pdf',
+          size: 1536,
+        },
+      },
+    ])
+    expect(withFile.includes('devis.pdf'), 'nom du fichier affiché')
+    expect(withFile.includes('download'), 'téléchargement proposé')
+    expect(withFile.includes('1,5 Ko'), 'taille de fichier lisible')
+
+    const withoutFiles = renderChat(true, [], false)
+    expect(
+      withoutFiles.includes('pièces jointes non autorisées'),
+      'refus des pièces jointes expliqué',
+    )
 
     const blocked = renderChat(false)
     expect(blocked.includes('Chat indisponible'), 'état indisponible annoncé')

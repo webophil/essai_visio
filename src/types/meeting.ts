@@ -112,6 +112,18 @@ export interface VideoEffectChoice {
 /** État par défaut : le flux de la caméra part inchangé. */
 export const NO_VIDEO_EFFECT: VideoEffectChoice = { id: 'none' }
 
+/** Pièce jointe reçue dans le chat (image ou fichier). */
+export interface ChatAttachmentView {
+  /** `image` affiche un aperçu, `file` une carte de téléchargement. */
+  kind: 'image' | 'file'
+  /** Adresse fournie par la messagerie de la réunion. */
+  url: string
+  /** Nom d'origine du fichier. */
+  name: string
+  /** Taille en octets (`0` si le SDK ne l'annonce pas). */
+  size: number
+}
+
 /** Message du chat de réunion, tel qu'affiché dans le panneau. */
 export interface ChatMessageView {
   id: string
@@ -121,7 +133,10 @@ export interface ChatMessageView {
   isLocal: boolean
   /** Horodatage de réception (millisecondes). */
   sentAt: number
+  /** Texte du message ; vide pour une pièce jointe sans légende. */
   text: string
+  /** Pièce jointe éventuelle. */
+  attachment?: ChatAttachmentView
 }
 
 /**
@@ -134,6 +149,8 @@ export interface ChatState {
   available: boolean
   /** L'envoi est-il autorisé par le profil de participant ? */
   canSend: boolean
+  /** L'envoi de pièces jointes est-il autorisé par le profil ? */
+  canSendFiles: boolean
   /** Explication affichée quand le chat n'est pas utilisable. */
   unavailableReason: string | null
   /** Longueur maximale d'un message, imposée par le SDK. */
@@ -148,6 +165,7 @@ export interface ChatState {
 export const EMPTY_CHAT_STATE: ChatState = {
   available: false,
   canSend: false,
+  canSendFiles: false,
   unavailableReason: null,
   maxTextLength: 500,
   messages: [],
