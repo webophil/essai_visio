@@ -48,7 +48,7 @@ export interface MeetingContextValue {
   /** Instantané de la session temps réel : participants, médias, erreurs. */
   session: MeetingSessionState
 
-  /** Chat de la réunion (messagerie native RealtimeKit, sans stockage). */
+  /** Chat de la réunion (messagerie native) : l'application n'en garde aucune copie. */
   chat: ChatState
   /** Envoie un message aux participants connectés (`true` si accepté). */
   sendChatMessage: (text: string) => Promise<boolean>

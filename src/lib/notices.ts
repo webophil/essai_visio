@@ -23,8 +23,13 @@ export const NOTICES = {
   screenShareNote:
     "Votre écran est transmis à tous les participants. Votre caméra reste visible en vignette pendant le partage.",
 
-  /** Chat */
-  chat: "Les messages ne sont pas conservés après la réunion.",
+  /**
+   * Chat : l'application ne garde aucune copie, mais Cloudflare conserve
+   * messages et pièces jointes pour le rejeu. Seule la validité des liens de
+   * téléchargement a été mesurée : une heure.
+   */
+  chat:
+    "Aucune copie n'est gardée par cette application. Messages et pièces jointes sont conservés par le service de visioconférence ; les liens de téléchargement expirent après une heure.",
   chatUnavailable:
     "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
 

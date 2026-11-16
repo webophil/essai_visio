@@ -21,10 +21,12 @@ const PREVIEWABLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif']
 /**
  * Messagerie de réunion.
  *
- * Les messages circulent entre les participants connectés et ne sont ni
- * enregistrés ni relus après la réunion. Quand l'envoi n'est pas autorisé, le
- * panneau l'annonce explicitement et conserve un champ désactivé plutôt que
- * d'afficher une saisie sans effet.
+ * Les messages circulent entre les participants connectés. L'application n'en
+ * conserve aucune copie et ne les relit jamais ; le service de visioconférence
+ * les garde pour le rejeu, et les liens de téléchargement expirent au bout
+ * d'une heure. Quand l'envoi n'est pas autorisé, le panneau l'annonce
+ * explicitement et conserve un champ désactivé plutôt que d'afficher une
+ * saisie sans effet.
  */
 export function ChatPanel() {
   const { closePanel, chat, sendChatMessage, sendChatFile } = useMeeting()
