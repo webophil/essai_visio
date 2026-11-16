@@ -116,6 +116,21 @@ direct (`chatUpdate`) ;
   (`X-Amz-Expires=3600`) : un lien expiré ne prouve pas la suppression de l'objet. L'application ne
   les relit jamais après coup.
 
+### Sécurité des pièces jointes
+
+Le fichier ne traverse pas notre Worker : le navigateur l'envoie directement à Cloudflare R2 via
+une URL présignée S3, et le destinataire le lit de la même façon.
+
+- **en transit** : TLS entre le navigateur et R2 ; les métadonnées passent par le signaling
+  RealtimeKit, en WebSocket sécurisé ;
+- **au repos** : R2 chiffre chaque objet en AES-256/GCM, avec des clés gérées par Cloudflare ;
+- **pas de chiffrement de bout en bout** : Cloudflare détient les clés et peut donc déchiffrer le
+  contenu ; le nom, la taille et la réunion concernée lui sont visibles ;
+- **URL présignée porteuse** : quiconque possède le lien lit le fichier sans authentification
+  pendant sa validité, mesurée à une heure (`X-Amz-Expires=3600`) ;
+- **conservation** : sept jours côté RealtimeKit (réunion sans `persist_chat`), indépendamment de
+  l'expiration du lien.
+
 Le diagnostic organisateur affiche les permissions de chat réellement configurées pour les deux
 presets (texte et fichiers), lues par `GET /presets` — aucun identifiant n'y est renvoyé.
 
