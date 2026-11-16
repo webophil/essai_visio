@@ -24,12 +24,10 @@ export const NOTICES = {
     "Votre écran est transmis à tous les participants. Votre caméra reste visible en vignette pendant le partage.",
 
   /**
-   * Chat : l'application ne garde aucune copie, mais Cloudflare conserve
-   * messages et pièces jointes pour le rejeu. Seule la validité des liens de
-   * téléchargement a été mesurée : une heure.
+   * Chat : conservation côté RealtimeKit, sept jours pour une réunion créée
+   * sans `persist_chat`. Une seule ligne, l'usage étant interne.
    */
-  chat:
-    "Aucune copie n'est gardée par cette application. Messages et pièces jointes sont conservés par le service de visioconférence ; les liens de téléchargement expirent après une heure.",
+  chat: "Chat et pièces jointes conservés 7 jours pour référence",
   chatUnavailable:
     "Les messages écrits ne sont pas activés pour cette réunion. L’organisateur peut les autoriser.",
 

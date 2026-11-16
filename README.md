@@ -111,11 +111,10 @@ direct (`chatUpdate`) ;
 - disponibilité lue dans le preset du participant (`permissions.chatPublic`) : si le profil
   n'autorise pas l'écrit, le panneau le dit et la saisie reste désactivée ; le droit aux pièces
   jointes est distinct (`chatPublic.files`) et désactive le trombone avec une explication ;
-- aucune copie par l'application. Cloudflare conserve le chat et les pièces jointes pour le rejeu ;
-  la durée de conservation côté serveur n'est pas documentée, mais les liens présignés mesurés
-  restent valides **une heure** (`X-Amz-Expires=3600`), donc au-delà de la fin d'une réunion courte.
-  Un lien expiré ne prouve pas la suppression de l'objet. L'application ne les relit jamais après
-  coup.
+- aucune copie par l'application. RealtimeKit conserve le chat **sept jours** (réunion créée sans
+  `persist_chat`), pièces jointes comprises. Les liens présignés, eux, expirent après **une heure**
+  (`X-Amz-Expires=3600`) : un lien expiré ne prouve pas la suppression de l'objet. L'application ne
+  les relit jamais après coup.
 
 Le diagnostic organisateur affiche les permissions de chat réellement configurées pour les deux
 presets (texte et fichiers), lues par `GET /presets` — aucun identifiant n'y est renvoyé.

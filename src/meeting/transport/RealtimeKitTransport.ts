@@ -137,8 +137,8 @@ export class RealtimeKitTransport implements MeetingTransport {
   /**
    * Envoie un message texte dans la salle.
    * Le message part par la messagerie **native** de RealtimeKit : l'application
-   * n'en garde aucune copie et ne le relit jamais. Cloudflare le conserve pour
-   * le rejeu ; les liens de téléchargement expirent au bout d'une heure.
+   * n'en garde aucune copie et ne le relit jamais. RealtimeKit le conserve sept
+   * jours ; les liens de téléchargement expirent au bout d'une heure.
    */
   async sendChatMessage(text: string): Promise<boolean> {
     const client = this.client

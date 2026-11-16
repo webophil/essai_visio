@@ -142,7 +142,7 @@ export interface ChatMessageView {
 /**
  * État du chat de réunion.
  * Les messages vivent dans la réunion RealtimeKit : l'application n'en garde
- * aucune copie et ne les relit jamais. Cloudflare les conserve pour le rejeu ;
+ * aucune copie et ne les relit jamais. RealtimeKit les conserve sept jours ;
  * seuls les liens de téléchargement expirent (une heure).
  */
 export interface ChatState {

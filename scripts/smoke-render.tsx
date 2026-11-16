@@ -1225,12 +1225,8 @@ checks.push({
     expect(empty.includes('Entrée pour envoyer'), 'aide d’envoi simplifiée')
     expect(!empty.includes('caractères.'), 'compteur de caractères retiré de l’aide')
     expect(
-      empty.includes('conservés par le service de visioconférence'),
-      'conservation côté service annoncée',
-    )
-    expect(
-      empty.includes('expirent après une heure'),
-      'durée réelle des liens annoncée',
+      empty.includes('Chat et pièces jointes conservés 7 jours pour référence'),
+      'durée de conservation annoncée en une ligne',
     )
     expect(!empty.includes('Messages non conservés'), 'encadré de conservation retiré')
     expect(empty.includes('Joindre un fichier'), 'bouton de pièce jointe présent')
