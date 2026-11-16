@@ -316,8 +316,13 @@ await testAsync('la CSP bloque réellement et HSTS protège le domaine', async (
       assert.match(policy, /connect-src 'self' https:\/\/api\.realtime\.cloudflare\.com/, 'connect-src incomplète')
     assert.match(
       policy,
-      /img-src[^;]*https:\/\/r2\.cloudflarestorage\.com/,
+      /img-src[^;]*https:\/\/76944d4850015b5ae17c9461cdccd1cf\.r2\.cloudflarestorage\.com/,
       "hôte des pièces jointes absent de img-src",
+    )
+    assert.match(
+      policy,
+      /connect-src[^;]*76944d4850015b5ae17c9461cdccd1cf\.r2\.cloudflarestorage\.com/,
+      "hôte d'envoi des pièces jointes absent de connect-src",
     )
     assert.match(policy, /script-src 'self' 'wasm-unsafe-eval'/, 'script-src incomplète')
   assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains')

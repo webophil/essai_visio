@@ -44,10 +44,12 @@ export const STRICT_TRANSPORT_SECURITY = 'max-age=31536000; includeSubDomains'
  * - `*.dyte.in` / `*.dyte.io` couvrent les hôtes hérités du SDK (RealtimeKit
  *   est bâti sur Dyte) : ils apparaissent dans le bundle publié et servent de
  *   repli si Cloudflare renvoie une URL de signaling historique.
- * - `r2.cloudflarestorage.com` est documenté pour le stockage des messages de
- *   chat. Il est autorisé en `connect-src` (envoi et récupération) ainsi qu'en
- *   `img-src` et `media-src` : les aperçus et les pièces jointes sont servis
- *   depuis cet hôte, et seraient autrement refusés à l'affichage.
+ * - le stockage des pièces jointes du chat utilise un **sous-domaine** R2, pas
+ *   l'hôte nu documenté : les URL présignées observées pointent vers
+ *   `76944d4850015b5ae17c9461cdccd1cf.r2.cloudflarestorage.com`. C'est cet hôte
+ *   exact qui est autorisé en `connect-src` (envoi), `img-src` et `media-src`
+ *   (aperçu et lecture). Un caractère générique `*.r2.cloudflarestorage.com`
+ *   ouvrirait tous les comptes R2 de Cloudflare : inutile ici.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -57,10 +59,10 @@ export const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self'",
-  "img-src 'self' data: blob: https://r2.cloudflarestorage.com",
-  "media-src 'self' blob: https://r2.cloudflarestorage.com",
+  "img-src 'self' data: blob: https://76944d4850015b5ae17c9461cdccd1cf.r2.cloudflarestorage.com",
+  "media-src 'self' blob: https://76944d4850015b5ae17c9461cdccd1cf.r2.cloudflarestorage.com",
   "font-src 'self'",
-  "connect-src 'self' https://api.realtime.cloudflare.com wss://api.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://*.dyte.in wss://*.dyte.in https://*.dyte.io wss://*.dyte.io https://r2.cloudflarestorage.com",
+  "connect-src 'self' https://api.realtime.cloudflare.com wss://api.realtime.cloudflare.com wss://*.realtime.cloudflare.com https://*.dyte.in wss://*.dyte.in https://*.dyte.io wss://*.dyte.io https://76944d4850015b5ae17c9461cdccd1cf.r2.cloudflarestorage.com",
   "worker-src 'self'",
   "manifest-src 'self'",
 ].join('; ')

@@ -519,9 +519,10 @@ Deux règles :
 `Strict-Transport-Security: max-age=31536000; includeSubDomains`. La politique autorise les hôtes
 réellement utilisés par le SDK : API `api.realtime.cloudflare.com`, signaling
 `wss://*.realtime.cloudflare.com`, et les domaines `dyte.in` / `dyte.io` que RealtimeKit (bâti sur
-Dyte) porte encore dans son code. `r2.cloudflarestorage.com` est autorisé en `connect-src`,
-`img-src` et `media-src` : c'est l'hôte documenté du stockage du chat, donc celui des aperçus et des
-pièces jointes. Le beacon d'analytics de la plateforme reste bloqué : il lit `localStorage`.
+Dyte) porte encore dans son code. Le stockage des pièces jointes utilise le sous-domaine
+`76944d4850015b5ae17c9461cdccd1cf.r2.cloudflarestorage.com` (observé sur les URL présignées), autorisé
+tel quel en `connect-src`, `img-src` et `media-src` — sans caractère générique, qui ouvrirait tous les
+comptes R2 de Cloudflare. Le beacon d'analytics de la plateforme reste bloqué : il lit `localStorage`.
 
 Retour arrière d'urgence : repasser `CSP_ENFORCED` à `false` et redéployer — la politique redevient
 un simple rapport, sans blocage.
