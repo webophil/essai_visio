@@ -21,6 +21,7 @@ import { SelectField } from '../ui/SelectField'
 import { StatusPill } from '../ui/StatusPill'
 import { TextField } from '../ui/TextField'
 import { InviteByEmailPanel } from '../meeting/InviteByEmailPanel'
+import { SmsReminderPanel } from '../meeting/SmsReminderPanel'
 import { BackgroundEffectPicker } from '../meeting/BackgroundEffectsPanel'
 import { VideoPlaceholder, VideoSurface } from '../meeting/VideoSurface'
 import { readMeetingSchedule } from '../../meeting/meetingSchedule'
@@ -380,12 +381,20 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
             ) : null}
 
             {isHost && realtimeKitId ? (
-              <InviteByEmailPanel
-                meetingId={meetingId}
-                realtimeKitId={realtimeKitId}
-                meetingName={meetingName}
-                startsAt={startsAt}
-              />
+              <>
+                <InviteByEmailPanel
+                  meetingId={meetingId}
+                  realtimeKitId={realtimeKitId}
+                  meetingName={meetingName}
+                  startsAt={startsAt}
+                />
+                <SmsReminderPanel
+                  meetingId={meetingId}
+                  realtimeKitId={realtimeKitId}
+                  meetingName={meetingName}
+                  startsAt={startsAt}
+                />
+              </>
             ) : null}
 
             <div className="mt-auto flex flex-col gap-3 border-t border-ink-700 pt-4">

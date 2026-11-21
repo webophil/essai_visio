@@ -32,6 +32,7 @@
 
 import { HOST_SESSION_TTL_MS, createHostSession, hasHostSecret, verifyHostKey, verifyHostSession } from './hostAuth.js'
 import { MailError, buildInvitation, hasMailer, sendMail } from './mailer.js'
+import { SmsError, buildSmsReminder, hasSms, normalizePhone, sendSms } from './sms.js'
 import { clientKey, createRateLimiter } from './rateLimit.js'
 import { applySecurityHeaders } from './securityHeaders.js'
 import {
@@ -114,6 +115,8 @@ const MAX_BODY_BYTES = 4096
 
 /** Six adresses au maximum par envoi : quatre invités, l'organisateur, une marge. */
 const MAX_INVITATION_RECIPIENTS = 6
+/** Cinq numéros au maximum par rappel SMS : la capacité d'une réunion. */
+const MAX_SMS_RECIPIENTS = 5
 /** Rendez-vous accepté : jusqu'à une heure de retard, et un an d'avance. */
 const APPOINTMENT_PAST_TOLERANCE_MS = 60 * 60_000
 const APPOINTMENT_HORIZON_MS = 365 * 24 * 60 * 60_000
@@ -129,6 +132,8 @@ const tokenLimiter = createRateLimiter({ limit: 15, windowMs: 5 * 60_000 })
 const meetingInfoLimiter = createRateLimiter({ limit: 30, windowMs: 5 * 60_000 })
 /** Un envoi d'invitations groupe plusieurs messages : plafond volontairement serré. */
 const invitationLimiter = createRateLimiter({ limit: 6, windowMs: 10 * 60_000 })
+/** Un rappel SMS coûte un crédit par destinataire : plafond encore plus serré. */
+const smsLimiter = createRateLimiter({ limit: 3, windowMs: 10 * 60_000 })
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -529,6 +534,117 @@ async function handleMeetingInvitations(request, env, rawMeetingId) {
 }
 
 /**
+ * `POST /api/meetings/:id/sms-reminders` — rappel mémoire par SMS, **sans lien**.
+ *
+ * Réservé à l'organisateur : chaque envoi consomme un crédit SMS par
+ * destinataire. Le message est rédigé côté serveur — nom réel de la réunion,
+ * jour et heure de Paris, aucun lien — et calibré pour tenir en un seul
+ * segment. Aucun numéro n'est stocké : ils ne font que transiter vers Sweego.
+ */
+async function handleMeetingSmsReminders(request, env, rawMeetingId) {
+  if (!(await isHostRequest(request, env))) {
+    return failure(
+      401,
+      'host-unauthorized',
+      "Seul l'organisateur authentifié peut envoyer un rappel par SMS.",
+    )
+  }
+
+  if (!hasSms(env)) {
+    return failure(
+      503,
+      'sms-not-configured',
+      "L'envoi de SMS n'est pas encore configuré : le secret SWEEGO_API_KEY doit être enregistré dans FreeBuff Sites (onglet Secrets).",
+    )
+  }
+
+  const limited = enforceRateLimit(request, smsLimiter, 'meeting-sms')
+  if (limited) return limited
+
+  const meetingId = normalizeMeetingId(rawMeetingId)
+  if (!meetingId) {
+    return failure(400, 'meeting-invalid', "L'identifiant du rendez-vous est invalide.")
+  }
+
+  const body = await readJsonBody(request)
+  if (!body) return failure(400, 'body-invalid', 'Requête illisible.')
+
+  const realtimeKitId = typeof body.realtimeKitId === 'string' ? body.realtimeKitId.trim() : ''
+  if (!isUuid(realtimeKitId)) {
+    return failure(400, 'meeting-invalid', "L'identifiant de réunion Cloudflare est absent ou invalide.")
+  }
+
+  const startsAt = normalizeStartsAt(body.startsAt)
+  if (!startsAt) {
+    return failure(
+      400,
+      'appointment-invalid',
+      "Indiquez une date et une heure de rendez-vous valides, dans l'année à venir.",
+    )
+  }
+
+  const phones = Array.isArray(body.phones)
+    ? [...new Set(body.phones.map(normalizePhone).filter(Boolean))]
+    : []
+  // Numéro de rappel de l'organisateur : facultatif, comme l'adresse e-mail.
+  const rawHostPhone = typeof body.hostPhone === 'string' ? body.hostPhone.trim() : ''
+  const hostPhone = rawHostPhone.length > 0 ? normalizePhone(rawHostPhone) : null
+
+  if (phones.length === 0) {
+    return failure(400, 'recipients-invalid', 'Indiquez au moins un numéro de téléphone.')
+  }
+  if (rawHostPhone.length > 0 && !hostPhone) {
+    return failure(400, 'recipients-invalid', "Le numéro de rappel de l'organisateur est invalide.")
+  }
+
+  const recipients = hostPhone ? [...new Set([...phones, hostPhone])] : phones
+  if (recipients.length > MAX_SMS_RECIPIENTS) {
+    return failure(
+      400,
+      'recipients-invalid',
+      `Proposez au maximum ${MAX_SMS_RECIPIENTS} numéros par envoi.`,
+    )
+  }
+
+  // Le nom vient de RealtimeKit, jamais du navigateur : pas de texte libre.
+  let title = DEFAULT_MEETING_TITLE
+  try {
+    const meeting = await getMeeting(env, realtimeKitId)
+    if (meeting) title = normalizeTitle(meeting.title, DEFAULT_MEETING_TITLE)
+  } catch (error) {
+    return realtimeKitFailure(error)
+  }
+
+  const reminder = buildSmsReminder({ title, startsAt })
+  if (!reminder) {
+    return failure(400, 'appointment-invalid', 'Indiquez une date et une heure de rendez-vous valides.')
+  }
+
+  let sent = 0
+  const failed = []
+
+  for (const phone of recipients) {
+    try {
+      await sendSms(env, { to: phone, text: reminder.text })
+      sent += 1
+    } catch (error) {
+      reportFailure('sms', error)
+      failed.push({ phone, code: error instanceof SmsError ? error.code : 'sms-failed' })
+    }
+  }
+
+  if (sent === 0) {
+    return failure(
+      502,
+      'sms-failed',
+      "Aucun rappel SMS n'a pu être envoyé. Vérifiez que le canal SMS et l'expéditeur sont validés chez Sweego, puis réessayez.",
+    )
+  }
+
+  return json({ sent, failed, segments: reminder.segments })
+}
+
+/**
  * `GET /api/meetings/:id` — nom de la réunion, lisible par ses participants.
  *
  * Le nom saisi par l'organisateur est stocké dans le **titre de la réunion
@@ -571,6 +687,7 @@ async function handleDiagnostic(request, env) {
     apiTokenPresent: config.tokenPresent,
     hostKeyPresent: hasHostSecret(env),
     mailConfigured: hasMailer(env),
+    smsConfigured: hasSms(env),
     accountId: config.accountId,
     appId: config.appId,
     presetsExpected: { host: config.hostPreset, guest: config.guestPreset },
@@ -622,6 +739,7 @@ async function routeApi(request, url, env) {
       // Simple présence du secret d'envoi, jamais sa valeur : permet de
       // vérifier depuis l'extérieur qu'un envoi d'invitations est possible.
       mailConfigured: hasMailer(env),
+      smsConfigured: hasSms(env),
     })
   }
 
@@ -655,6 +773,10 @@ async function routeApi(request, url, env) {
   const invitationMatch = path.match(/^\/api\/meetings\/([^/]+)\/invitations$/)
   if (invitationMatch && request.method === 'POST') {
     return handleMeetingInvitations(request, env, invitationMatch[1])
+  }
+  const smsMatch = path.match(/^\/api\/meetings\/([^/]+)\/sms-reminders$/)
+  if (smsMatch && request.method === 'POST') {
+    return handleMeetingSmsReminders(request, env, smsMatch[1])
   }
   if (path === '/api/rtk/token' && request.method === 'POST') {
     return handleParticipantToken(request, env)

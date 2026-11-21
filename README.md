@@ -46,6 +46,7 @@ Navigateur ──► Worker FreeBuff (/api/...)  ──► API Cloudflare Realti
 | `worker/realtimekit.js` | Client REST RealtimeKit (création de réunion, participants, presets) |
 | `worker/hostAuth.js` | Session organisateur signée (HMAC-SHA-256), sans base de données |
 | `worker/mailer.js` | Invitations par e-mail : un message par destinataire, contenu rédigé côté serveur |
+| `worker/sms.js` | Rappels SMS Sweego : numéros normalisés, message court sans lien, un segment garanti |
 | `worker/rateLimit.js` | Limitation de débit en mémoire (fenêtre glissante) |
 | `src/meeting/transport/RealtimeKitTransport.ts` | Seule frontière avec le SDK côté navigateur |
 | `src/media/useRtkMedia.ts` | Capture des périphériques par le SDK (écran de préparation) |
@@ -326,6 +327,9 @@ Les fichiers du moteur ne sont pas versionnés (`public/vendor/` est ignoré) :
 | `CLOUDFLARE_API_TOKEN` | **secret** (FreeBuff Sites) | Jeton d'API Cloudflare à portée « Realtime Admin ». Utilisé uniquement par le Worker. |
 | `PHILDEV_HOST_KEY` | **secret** (FreeBuff Sites) | Clé organisateur, à définir par PhilDEV. Comparée à temps constant ; sert à signer la session. |
 | `RESEND_API_KEY` | **secret** (FreeBuff Sites) | Clé d'API du fournisseur d'e-mail (Resend). Utilisée uniquement par le Worker, jamais renvoyée au navigateur. |
+| `SWEEGO_API_KEY` | **secret** (FreeBuff Sites) | Valeur de la clé API Sweego, envoyée dans l'en-tête `Api-Key`. Utilisée uniquement par le Worker. |
+| `SWEEGO_SENDER_ID` | **secret** (FreeBuff Sites) | Expéditeur SMS alphanumérique (3 à 11 lettres/chiffres, au moins une lettre). Défaut : `PhilDEV`. |
+| `SWEEGO_KEY_ID` | **secret** (FreeBuff Sites) | Identifiant de la clé Sweego, conservé pour référence. L'API HTTP `/send` ne l'utilise pas : seule la valeur `SWEEGO_API_KEY` authentifie l'appel. |
 
 Sans `PHILDEV_HOST_KEY`, l'accès organisateur répond `503 host-key-missing` : la création de
 réunion et le rôle d'hôte restent fermés, les invités ne sont pas affectés.
@@ -338,6 +342,12 @@ L'expéditeur par défaut est `PhilDEV Visio <invitation@phildev.online>` ; `MAI
 (`contact@phildev.online`) s'affiche telle quelle dans les boîtes de réception ; pour garder le nom
 visible, utilisez la forme `PhilDEV Visio <contact@phildev.online>`. Le domaine de cette adresse
 doit être vérifié chez le fournisseur, sinon l'envoi est refusé.
+
+Sans `SWEEGO_API_KEY`, l'envoi de SMS répond `503 sms-not-configured` : les invitations e-mail et la
+visioconférence restent utilisables, seul le rappel SMS est désactivé. Le canal SMS doit être activé
+chez Sweego (avec un numéro de test) et l'expéditeur `PhilDEV` **validé** ; avant validation, les
+SMS partent du numéro court `38082`. Les crédits SMS sont prépayés et distincts de l'offre e-mail
+(environ 0,040 € HT par SMS en France, packs à partir de 20 €).
 
 L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application RealtimeKit
 (`09fe762d-4e8d-45c7-9129-a466ae061711`) sont des valeurs **non secrètes**, déclarées dans
@@ -358,6 +368,7 @@ L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application Re
 | `POST` | `/api/host/session` | clé organisateur | Échange la clé contre une session signée (30 jours) |
 | `POST` | `/api/meetings` | **session hôte** | Crée une réunion et réserve l'emplacement de l'organisateur |
 | `POST` | `/api/meetings/:id/invitations` | **session hôte** | Envoie le lien et l'heure du rendez-vous par e-mail (invités, et organisateur s'il l'a demandé) |
+| `POST` | `/api/meetings/:id/sms-reminders` | **session hôte** | Envoie un rappel SMS court, sans lien (Sweego) |
 | `GET` | `/api/meetings/:id` | public | Nom de la réunion (identifiant et titre uniquement) |
 | `POST` | `/api/rtk/token` | public (invité) / session (hôte) | Délivre un jeton de participation |
 | `GET` | `/api/rtk/diagnostic` | **session hôte** | État en lecture seule (presets, configuration) — aucun secret |
@@ -416,13 +427,36 @@ Trois choix tenus côté Worker :
 - **contenu rédigé côté serveur** — sujet et corps sont construits à partir du titre RealtimeKit de
   la réunion, jamais d'un texte venu du navigateur : le domaine d'envoi ne peut pas servir de
   relais. L'endpoint exige la session hôte et applique sa propre limite de débit (six envois par
-  quart d'heure et par adresse cliente) ;
+  dizaine de minutes et par adresse cliente) ;
 - **rien n'est persisté** — ni la liste des invités, ni l'heure du rendez-vous. Elle vit dans le
   message envoyé, ce qui évite une base de données pour une information qui n'a pas à être relue.
 
-Limites assumées : six adresses au maximum par envoi, et l'heure du rendez-vous **n'apparaît pas
-sur la page** — elle est dans l'e-mail. L'afficher dans la salle demanderait une persistance que
-le projet n'a pas.
+Limites assumées : six adresses au maximum par envoi. Le créneau saisi à la création est rappelé
+en lecture seule dans le panneau d'envoi ; il n'est pas persisté côté serveur.
+
+## Rappels par SMS
+
+Le panneau **« Rappeler par SMS »**, réservé à l'organisateur, envoie un rappel **mémoire** aux
+personnes qui ont déjà reçu l'invitation par e-mail. Le SMS **ne contient aucun lien** :
+
+> Réunion PhilDEV lundi 23/11 14H30. Lien envoyé dans votre boite email
+
+Le texte est rédigé par le Worker à partir du titre RealtimeKit et de l'heure de Paris. Le titre
+est tronqué si nécessaire pour tenir en **70 caractères**, soit **un seul segment** même en UCS-2 :
+un SMS par destinataire, sans découpage. En GSM-7 (accents français compris), la marge est plus
+large encore. L'aperçu affiché dans le panneau est exactement le texte envoyé.
+
+Côté serveur : `worker/sms.js` appelle `POST https://api.sweego.io/send` avec `channel: "sms"`,
+`campaign-type: "transac"`, `sender-id` (`SWEEGO_SENDER_ID`, défaut `PhilDEV`) et
+`recipients: [{ num, region: "FR" }]` ; l'authentification tient dans l'en-tête `Api-Key`.
+Seuls les mobiles français sont acceptés (`06…`, `+33 6…`, `0033 6…`), normalisés en E.164.
+Aucun numéro n'est stocké : ils transitent vers Sweego puis sont oubliés.
+
+Limites : **cinq numéros par envoi** (organisateur compris, son numéro de rappel étant facultatif),
+**trois envois par dizaine de minutes** et par adresse cliente. Un refus de Sweego est signalé sans
+relayer son corps ; la réponse indique le nombre parti, les numéros en échec et le nombre de
+segments. Les secrets ne sont configurés qu'en production : en Preview, l'envoi répond
+`503 sms-not-configured`.
 
 ## Démarrage
 

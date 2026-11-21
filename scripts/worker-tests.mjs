@@ -14,10 +14,12 @@
 import assert from 'node:assert/strict'
 
 import worker from '../worker/index.js'
+import { buildSmsReminder } from '../worker/sms.js'
 
 const API_TOKEN = 'jeton-api-cloudflare-DE-TEST'
 const HOST_KEY = 'cle-organisateur-DE-TEST'
 const MAIL_KEY = 'cle-envoi-DE-TEST'
+const SMS_KEY = 'cle-sms-DE-TEST'
 const INDEX_HTML = '<!doctype html><html lang="fr"><body><div id="root"></div></body></html>'
 
 let failures = 0
@@ -68,6 +70,10 @@ const rtkCalls = []
 const mailSends = []
 /** Force un refus du fournisseur, pour vérifier le traitement d'échec. */
 let mailFailure = false
+/** SMS acceptés par le fournisseur Sweego simulé (aucun envoi réel). */
+const smsSends = []
+/** Force un refus de Sweego, pour vérifier le traitement d'échec. */
+let smsFailure = false
 
 function seedMeeting() {
   const id = crypto.randomUUID()
@@ -190,6 +196,22 @@ globalThis.fetch = async (input, init = {}) => {
     return new Response(JSON.stringify({ id: `message-${mailSends.length}` }), { status: 200 })
   }
 
+  // Fournisseur SMS Sweego : même interception, aucun envoi réel.
+  if (url.host === 'api.sweego.io' && method === 'POST') {
+    if (smsFailure) {
+      return new Response(JSON.stringify({ code: 'invalid_sender' }), { status: 422 })
+    }
+    smsSends.push({
+      to: body.recipients?.[0]?.num,
+      text: body['message-txt'],
+      sender: body['sender-id'],
+      campaign: body['campaign-type'],
+      region: body.recipients?.[0]?.region,
+      apiKey: headers['Api-Key'],
+    })
+    return new Response(JSON.stringify({ id: `sms-${smsSends.length}` }), { status: 200 })
+  }
+
   return new Response(JSON.stringify({ success: false, errors: [{ code: 9999 }] }), { status: 404 })
 }
 
@@ -197,6 +219,8 @@ const baseEnv = {
   CLOUDFLARE_API_TOKEN: API_TOKEN,
   PHILDEV_HOST_KEY: HOST_KEY,
   RESEND_API_KEY: MAIL_KEY,
+  SWEEGO_API_KEY: SMS_KEY,
+  SWEEGO_SENDER_ID: 'PhilDEV',
   ASSETS: { fetch: assetsFetch },
 }
 
@@ -218,6 +242,7 @@ async function readJson(response, label) {
   assert.ok(!text.includes(API_TOKEN), `${label} : le jeton d'API apparaît dans la réponse`)
   assert.ok(!text.includes(HOST_KEY), `${label} : la clé organisateur apparaît dans la réponse`)
   assert.ok(!text.includes(MAIL_KEY), `${label} : la clé d'envoi d'e-mails apparaît dans la réponse`)
+  assert.ok(!text.includes(SMS_KEY), `${label} : la clé d'envoi de SMS apparaît dans la réponse`)
 
   try {
     return JSON.parse(text)
@@ -882,6 +907,186 @@ await testAsync('un refus du fournisseur est signalé sans relayer son détail',
   } finally {
     mailFailure = false
   }
+})
+
+group('Rappels SMS')
+
+/** Corps de rappel SMS valide, avec surcharges explicites. */
+function smsBody(realtimeKitId, overrides = {}) {
+  return {
+    realtimeKitId,
+    startsAt: new Date(Date.now() + 48 * 60 * 60_000).toISOString(),
+    phones: ['06 12 34 56 78'],
+    hostPhone: '',
+    ...overrides,
+  }
+}
+
+await testAsync('le message tient en un segment, sans lien, avec le nom et l’heure', async () => {
+  const reminder = buildSmsReminder({
+    title: 'Réunion PhilDEV',
+    startsAt: '2026-11-23T13:30:00.000Z',
+  })
+
+  assert.ok(reminder, 'message attendu')
+  assert.equal(
+    reminder.text,
+    'Réunion PhilDEV lundi 23/11 14H30. Lien envoyé dans votre boite email',
+  )
+  assert.ok(reminder.text.length <= 70, `message trop long (${reminder.text.length})`)
+  assert.equal(reminder.segments, 1, 'un seul segment attendu')
+  assert.equal(reminder.encoding, 'gsm7')
+  assert.equal(reminder.text.includes('http'), false, 'aucun lien ne doit figurer dans le SMS')
+
+  const long = buildSmsReminder({
+    title: 'Une réunion beaucoup trop longue pour tenir dans un SMS',
+    startsAt: '2026-11-23T13:30:00.000Z',
+  })
+  assert.ok(long.text.length <= 70, `titre long non tronqué (${long.text.length})`)
+  assert.ok(long.text.includes('…'), 'troncature du titre attendue')
+  assert.equal(long.segments, 1)
+})
+
+await testAsync('sans session organisateur, aucun SMS ne part', async () => {
+  const realtimeKitId = seedMeeting()
+  const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.6.0.1' },
+    body: smsBody(realtimeKitId),
+  })
+
+  assert.equal(response.status, 401)
+  assert.equal((await response.json()).error, 'host-unauthorized')
+})
+
+await testAsync('sans secret Sweego, le rappel est refusé proprement', async () => {
+  const token = await login('10.6.0.2')
+  const realtimeKitId = seedMeeting()
+  const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.0.2' },
+    body: smsBody(realtimeKitId),
+    env: { CLOUDFLARE_API_TOKEN: API_TOKEN, PHILDEV_HOST_KEY: HOST_KEY, ASSETS: { fetch: assetsFetch } },
+  })
+
+  assert.equal(response.status, 503)
+  assert.equal((await response.json()).error, 'sms-not-configured')
+  assert.equal(smsSends.length, 0)
+})
+
+await testAsync('un numéro invalide est refusé avant tout envoi', async () => {
+  smsSends.length = 0
+  const token = await login('10.6.0.3')
+  const realtimeKitId = seedMeeting()
+
+  const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.0.3' },
+    body: smsBody(realtimeKitId, { phones: ['0123'] }),
+  })
+
+  assert.equal(response.status, 400)
+  assert.equal((await response.json()).error, 'recipients-invalid')
+  assert.equal(smsSends.length, 0, 'aucun SMS ne doit partir')
+})
+
+await testAsync('un SMS par numéro, avec l’heure, le bon expéditeur et sans lien', async () => {
+  smsSends.length = 0
+  const token = await login('10.6.0.4')
+  const realtimeKitId = seedMeeting()
+  rtkTitles.set(realtimeKitId, 'Point équipe')
+
+  const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.0.4' },
+    body: smsBody(realtimeKitId, {
+      phones: ['06 12 34 56 78', '07 98 76 54 32'],
+      hostPhone: '06 11 22 33 44',
+    }),
+  })
+
+  assert.equal(response.status, 200)
+  const report = await readJson(response, 'rappel SMS')
+  assert.equal(report.sent, 3, 'deux invités et l’organisateur')
+  assert.deepEqual(report.failed, [])
+  assert.equal(report.segments, 1)
+  assert.equal(smsSends.length, 3, 'un SMS par numéro')
+
+  assert.deepEqual(
+    smsSends.map((sms) => sms.to).sort(),
+    ['+33611223344', '+33612345678', '+33798765432'],
+  )
+  for (const sms of smsSends) {
+    assert.ok(sms.text.startsWith('Point équipe '), 'nom réel de la réunion attendu')
+    assert.match(sms.text, /\d{2}\/\d{2} \d{2}H\d{2}\. Lien envoyé dans votre boite email$/, 'heure absente')
+    assert.equal(sms.text.includes('http'), false, 'aucun lien dans le SMS')
+    assert.equal(sms.apiKey, SMS_KEY, 'clé Sweego absente de l’appel')
+    assert.equal(sms.sender, 'PhilDEV')
+    assert.equal(sms.campaign, 'transac')
+    assert.equal(sms.region, 'FR')
+  }
+})
+
+await testAsync('sans numéro d’organisateur, aucun SMS ne lui est envoyé', async () => {
+  smsSends.length = 0
+  const token = await login('10.6.0.5')
+  const realtimeKitId = seedMeeting()
+  rtkTitles.set(realtimeKitId, 'Point équipe')
+
+  const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.0.5' },
+    body: smsBody(realtimeKitId),
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal((await readJson(response, 'rappel SMS')).sent, 1)
+  assert.equal(smsSends.length, 1)
+  assert.equal(smsSends[0].to, '+33612345678')
+})
+
+await testAsync('un refus de Sweego est signalé sans relayer son détail', async () => {
+  smsFailure = true
+  try {
+    const token = await login('10.6.0.6')
+    const realtimeKitId = seedMeeting()
+    rtkTitles.set(realtimeKitId, 'Point équipe')
+
+    const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.0.6' },
+      body: smsBody(realtimeKitId),
+    })
+
+    assert.equal(response.status, 502)
+    const payload = await readJson(response, 'rappel refusé')
+    assert.equal(payload.error, 'sms-failed')
+    assert.ok(!JSON.stringify(payload).includes('invalid_sender'), 'code amont relayé à tort')
+  } finally {
+    smsFailure = false
+  }
+})
+
+await testAsync('les rappels SMS sont freinés par leur propre limiteur', async () => {
+  const statuses = []
+
+  for (let index = 0; index < 6; index += 1) {
+    const token = await login('10.6.9.9')
+    const realtimeKitId = seedMeeting()
+    rtkTitles.set(realtimeKitId, 'Point équipe')
+    const response = await appRequest('/api/meetings/rdv-test/sms-reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.6.9.9' },
+      body: smsBody(realtimeKitId),
+    })
+    statuses.push(response.status)
+    if (response.status === 429) {
+      assert.ok(response.headers.get('Retry-After'), 'en-tête Retry-After attendu')
+      break
+    }
+  }
+
+  assert.ok(statuses.includes(429), `aucun 429 observé (statuts : ${statuses.join(',')})`)
 })
 
 group('Limitation de débit')

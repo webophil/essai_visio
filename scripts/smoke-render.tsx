@@ -31,6 +31,8 @@ import { UnknownRouteScreen } from '../src/components/screens/UnknownRouteScreen
 import { WelcomeScreen } from '../src/components/screens/WelcomeScreen'
 import { readLastMeeting } from '../src/meeting/lastMeeting'
 import { defaultStartInput, parseStartInput } from '../src/lib/schedule'
+import { SmsReminderPanel } from '../src/components/meeting/SmsReminderPanel'
+import { buildSmsPreview, normalizePhone, parsePhoneList } from '../src/lib/sms'
 import { remoteAudioTracks } from '../src/media/remoteAudio'
 import { CHAT_BOTTOM_THRESHOLD, isScrolledToBottom } from '../src/lib/chatScroll'
 import { createMeetingId, generateUuid, isRealtimeKitId, meetingDisplayName, parseMeetingInput } from '../src/lib/ids'
@@ -1048,6 +1050,42 @@ checks.push({
     expect(html.includes('Visio'), 'marque Visio')
     expect(html.includes('lang="fr"') === false, 'aucun attribut parasite')
     expect(html.length > 2000, 'markup non trivial')
+  },
+})
+
+checks.push({
+  name: 'aperçu des rappels SMS',
+  run: () => {
+    const preview = buildSmsPreview('Réunion PhilDEV', '2026-11-23T13:30:00.000Z')
+    expect(preview !== null, 'aperçu SMS attendu')
+    if (!preview) return
+
+    expect(
+      preview.text === 'Réunion PhilDEV lundi 23/11 14H30. Lien envoyé dans votre boite email',
+      'texte du SMS inattendu',
+    )
+    expect(preview.text.length <= 70, 'message calibré sous 70 caractères')
+    expect(preview.segments === 1, 'un seul segment attendu')
+    expect(!preview.text.includes('http'), 'aucun lien dans le SMS')
+
+    expect(normalizePhone('06 12 34 56 78') === '+33612345678', 'mobile national non normalisé')
+    expect(normalizePhone('+33 6 12 34 56 78') === '+33612345678', 'mobile international non normalisé')
+    expect(normalizePhone('0033 6 12 34 56 78') === '+33612345678', 'préfixe 0033 non normalisé')
+    expect(normalizePhone('0123') === null, 'numéro incomplet accepté à tort')
+
+    const parsed = parsePhoneList('06 12 34 56 78\n07 98 76 54 32\npas-un-numero')
+    expect(parsed.valid.length === 2, 'deux numéros valides attendus')
+    expect(parsed.invalid.length === 1, 'un numéro invalide attendu')
+
+    const html = renderToStaticMarkup(
+      <SmsReminderPanel
+        meetingId="rdv-test"
+        realtimeKitId="00000000-0000-4000-8000-000000000000"
+        meetingName="Réunion PhilDEV"
+        startsAt="2026-11-23T13:30:00.000Z"
+      />,
+    )
+    expect(html.includes('Rappeler par SMS'), 'panneau SMS absent du rendu')
   },
 })
 

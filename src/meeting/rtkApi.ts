@@ -38,6 +38,13 @@ export interface InvitationReport {
   failed: { email: string; code: string }[]
 }
 
+/** Bilan d'un rappel SMS : nombre parti, numéros refusés, segments par SMS. */
+export interface SmsReport {
+  sent: number
+  failed: { phone: string; code: string }[]
+  segments: number
+}
+
 export interface HostSession {
   token: string
   expiresAt: number
@@ -60,6 +67,8 @@ export interface PresetPermissionDetail {
 export interface DiagnosticReport {
   apiTokenPresent: boolean
   hostKeyPresent: boolean
+  mailConfigured: boolean
+  smsConfigured: boolean
   accountId: string
   appId: string
   presetsExpected: { host: string; guest: string }
@@ -103,6 +112,11 @@ export class MeetingApiError extends Error {
   /** L'envoi d'e-mails n'est pas configuré côté serveur (secret absent). */
   get needsMailSetup(): boolean {
     return this.code === 'mail-not-configured'
+  }
+
+  /** L'envoi de SMS n'est pas configuré côté serveur (secret absent). */
+  get needsSmsSetup(): boolean {
+    return this.code === 'sms-not-configured'
   }
 }
 
@@ -231,6 +245,34 @@ export function requestParticipantToken(options: {
 /** État en lecture seule de la configuration RealtimeKit (organisateur). */
 export function fetchDiagnostic(hostToken: string): Promise<DiagnosticReport> {
   return callApi<DiagnosticReport>('/api/rtk/diagnostic', { method: 'GET', hostToken })
+}
+
+/**
+ * Envoie un rappel mémoire par SMS — **sans lien** — à chaque numéro, puis à
+ * celui de l'organisateur s'il est fourni. Le message est rédigé par le Worker.
+ */
+export function sendMeetingSmsReminders(options: {
+  meetingId: string
+  realtimeKitId: string
+  startsAt: string
+  phones: string[]
+  /** Numéro de rappel de l'organisateur ; absent ou vide = aucun SMS. */
+  hostPhone?: string
+  hostToken: string
+}): Promise<SmsReport> {
+  return callApi<SmsReport>(
+    `/api/meetings/${encodeURIComponent(options.meetingId)}/sms-reminders`,
+    {
+      method: 'POST',
+      hostToken: options.hostToken,
+      body: {
+        realtimeKitId: options.realtimeKitId,
+        startsAt: options.startsAt,
+        phones: options.phones,
+        hostPhone: options.hostPhone,
+      },
+    },
+  )
 }
 
 /**
