@@ -23,6 +23,7 @@ import { TextField } from '../ui/TextField'
 import { InviteByEmailPanel } from '../meeting/InviteByEmailPanel'
 import { BackgroundEffectPicker } from '../meeting/BackgroundEffectsPanel'
 import { VideoPlaceholder, VideoSurface } from '../meeting/VideoSurface'
+import { readMeetingSchedule } from '../../meeting/meetingSchedule'
 import { useMeeting } from '../../state/meetingContext'
 import { usePreviewEffect } from '../../media/usePreviewEffect'
 import { NOTICES } from '../../lib/notices'
@@ -58,6 +59,8 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
 
   const [nameError, setNameError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  // Créneau choisi à la création : l'invitation par e-mail le reprend.
+  const [startsAt] = useState(() => readMeetingSchedule(meetingId))
   const [previewCanvas, setPreviewCanvas] = useState<HTMLCanvasElement | null>(null)
 
   // Aperçu local du décor : même moteur que la salle, sur un canvas distinct.
@@ -381,6 +384,7 @@ export function PreJoinScreen({ onBack }: PreJoinScreenProps) {
                 meetingId={meetingId}
                 realtimeKitId={realtimeKitId}
                 meetingName={meetingName}
+                startsAt={startsAt}
               />
             ) : null}
 

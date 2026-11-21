@@ -1,9 +1,11 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { Link2Off, Loader2, Video } from 'lucide-react'
 
 import { PhilDevLogo } from '../Brand/PhilDevLogo'
 import { Button } from '../ui/Button'
 import { Notice } from '../ui/Notice'
+import { TextField } from '../ui/TextField'
+import { defaultStartInput, parseStartInput } from '../../lib/schedule'
 import { meetingPath } from '../../lib/format'
 import { MEETING_LINK_PARAM } from '../../lib/ids'
 import { navigate } from '../../lib/router'
@@ -49,6 +51,18 @@ function SessionRouter() {
 function IncompleteLinkScreen({ onBack }: { onBack: () => void }) {
   const { meetingId, isHost } = useMeeting()
   const { start, busy, error } = useCreateMeeting()
+  const [startValue, setStartValue] = useState(() => defaultStartInput())
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+
+  const handleCreate = () => {
+    const startsAt = parseStartInput(startValue)
+    if (!startsAt) {
+      setScheduleError("Choisissez une date et une heure à venir, dans l'année.")
+      return
+    }
+    setScheduleError(null)
+    void start({ meetingId, startsAt })
+  }
 
   return (
     <div className="stage-backdrop flex min-h-dvh flex-col items-center justify-center gap-6 px-6 text-center">
@@ -80,9 +94,25 @@ function IncompleteLinkScreen({ onBack }: { onBack: () => void }) {
         </Notice>
       ) : null}
 
+      {isHost ? (
+        <div className="w-full max-w-sm text-left">
+          <TextField
+            label="Date et heure de la réunion"
+            type="datetime-local"
+            value={startValue}
+            error={scheduleError}
+            hint="Heure locale ; l'invitation l'indique en heure de Paris."
+            onChange={(event) => {
+              setStartValue(event.target.value)
+              if (scheduleError) setScheduleError(null)
+            }}
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-center gap-3">
         {isHost ? (
-          <Button size="lg" disabled={busy} onClick={() => void start({ meetingId })}>
+          <Button size="lg" disabled={busy} onClick={handleCreate}>
             {busy ? (
               <Loader2 aria-hidden="true" className="size-5 animate-spin" />
             ) : (

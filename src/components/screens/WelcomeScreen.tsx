@@ -18,6 +18,7 @@ import { StatusPill } from '../ui/StatusPill'
 import { TextField } from '../ui/TextField'
 import { parseMeetingLink } from '../../lib/format'
 import type { MeetingLink } from '../../lib/format'
+import { defaultStartInput, parseStartInput } from '../../lib/schedule'
 import { DEFAULT_MEETING_TITLE, MAX_MEETING_TITLE_LENGTH } from '../../lib/meetingTitle'
 import { readHostSession } from '../../meeting/hostSession'
 import { readLastMeeting } from '../../meeting/lastMeeting'
@@ -57,6 +58,9 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
   const [value, setValue] = useState('')
   // Nom de la réunion : pré-rempli, modifiable, jamais obligatoire.
   const [title, setTitle] = useState(DEFAULT_MEETING_TITLE)
+  // Créneau du rendez-vous, saisi dès la création (heure locale).
+  const [startValue, setStartValue] = useState(() => defaultStartInput())
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [hostReady, setHostReady] = useState(() => readHostSession() !== null)
@@ -84,11 +88,21 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
 
   const handleCreate = () => {
     clearError()
+
+    // La date et l'heure font partie de la création : elles seront reprises
+    // telles quelles par l'invitation par e-mail.
+    const startsAt = parseStartInput(startValue)
+    if (!startsAt) {
+      setScheduleError("Choisissez une date et une heure à venir, dans l'année.")
+      return
+    }
+    setScheduleError(null)
+
     if (!hostReady) {
       setHostDialogOpen(true)
       return
     }
-    void start({ title })
+    void start({ title, startsAt })
   }
 
   const handleJoin = () => {
@@ -195,6 +209,18 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
               // Un champ vide revient au nom par défaut : le nom transmis reste
               // toujours lisible.
               if (title.trim().length === 0) setTitle(DEFAULT_MEETING_TITLE)
+            }}
+          />
+
+          <TextField
+            label="Date et heure de la réunion"
+            type="datetime-local"
+            value={startValue}
+            error={scheduleError}
+            hint="Heure locale ; l'invitation l'indique en heure de Paris."
+            onChange={(event) => {
+              setStartValue(event.target.value)
+              if (scheduleError) setScheduleError(null)
             }}
           />
 

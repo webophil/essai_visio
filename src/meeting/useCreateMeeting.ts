@@ -4,8 +4,10 @@ import { MEETING_LINK_PARAM, createMeetingId } from '../lib/ids'
 import { meetingPath } from '../lib/format'
 import { normalizeMeetingTitle } from '../lib/meetingTitle'
 import { navigate } from '../lib/router'
+import { defaultStartInput, parseStartInput } from '../lib/schedule'
 import { readHostSession } from './hostSession'
 import { saveLastMeeting } from './lastMeeting'
+import { saveMeetingSchedule } from './meetingSchedule'
 import { MeetingApiError, createMeeting } from './rtkApi'
 
 export interface CreateMeetingOptions {
@@ -13,6 +15,8 @@ export interface CreateMeetingOptions {
   meetingId?: string
   /** Nom de la réunion saisi par l'organisateur (facultatif). */
   title?: string
+  /** Créneau saisi à la création ; à défaut, une heure à venir. */
+  startsAt?: string
 }
 
 export interface CreateMeetingController {
@@ -51,6 +55,16 @@ export function useCreateMeeting(): CreateMeetingController {
     setBusy(true)
     setError(null)
 
+    // Le créneau est saisi à la création : il est validé ici, puis repris par
+    // l'invitation par e-mail. À défaut, une heure à venir est proposée.
+    const startsAt = parseStartInput(options?.startsAt ?? defaultStartInput())
+    if (!startsAt) {
+      setError(
+        "Indiquez une date et une heure de rendez-vous valides, dans l'année à venir.",
+      )
+      return false
+    }
+
     try {
       // L'identifiant lisible est réutilisé lorsqu'il vient de l'URL (création
       // depuis une salle ouverte par un lien incomplet).
@@ -65,6 +79,7 @@ export function useCreateMeeting(): CreateMeetingController {
       // Raccourci d'accueil : l'organisateur retrouve la réunion sans recoller
       // son lien. Aucune donnée sensible, et le lien reste la référence.
       saveLastMeeting({ meetingId, realtimeKitId: created.meetingId, title: created.title })
+      saveMeetingSchedule(meetingId, startsAt)
 
       const link = `${meetingPath(meetingId)}?${MEETING_LINK_PARAM}=${encodeURIComponent(created.meetingId)}`
       navigate(link)

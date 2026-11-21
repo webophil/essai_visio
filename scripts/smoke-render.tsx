@@ -30,6 +30,7 @@ import { MeetingScreen } from '../src/components/screens/MeetingScreen'
 import { UnknownRouteScreen } from '../src/components/screens/UnknownRouteScreen'
 import { WelcomeScreen } from '../src/components/screens/WelcomeScreen'
 import { readLastMeeting } from '../src/meeting/lastMeeting'
+import { defaultStartInput, parseStartInput } from '../src/lib/schedule'
 import { remoteAudioTracks } from '../src/media/remoteAudio'
 import { CHAT_BOTTOM_THRESHOLD, isScrolledToBottom } from '../src/lib/chatScroll'
 import { createMeetingId, generateUuid, isRealtimeKitId, meetingDisplayName, parseMeetingInput } from '../src/lib/ids'
@@ -1033,6 +1034,9 @@ checks.push({
     expect(!html.includes('RealtimeKit'), 'aucune mention technique visible')
     expect(!html.includes('visio.phildev.online'), 'aucune cible de déploiement affichée')
     expect(html.includes('Créer une réunion'), 'bouton de création')
+    expect(html.includes('Date et heure de la réunion'), 'créneau demandé à la création')
+    expect(parseStartInput(defaultStartInput()) !== null, 'créneau proposé valide')
+    expect(parseStartInput('2000-01-01T10:00') === null, 'créneau passé refusé')
     expect(html.includes('Rejoindre'), 'bouton rejoindre')
     expect(html.includes('Lien d’invitation'), 'champ de lien')
     expect(html.includes('Accès organisateur'), 'accès protégé de l’organisateur')

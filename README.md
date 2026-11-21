@@ -392,10 +392,14 @@ réponses.
 
 ## Invitations par e-mail
 
-Depuis l'écran d'accès (`/rdv-…?r=…`), l'organisateur ouvre « Inviter par e-mail », saisit les
-adresses, la date et l'heure du rendez-vous, puis envoie. Chaque invité reçoit le nom de la
-réunion, l'heure en clair (heure de Paris), le lien complet et le rappel qu'aucun compte n'est
-nécessaire. Le **rappel de l'organisateur est facultatif** : champ vide, aucun message ne lui est
+La date et l'heure du rendez-vous se saisissent **à la création**, dans le champ « Date et heure de
+la réunion » placé sous le nom, sur l'écran d'accueil. Elles sont mémorisées pour cette réunion
+dans le navigateur de l'organisateur, puis reprises telles quelles par l'invitation — elles ne sont
+plus ressaisies dans le panneau d'envoi.
+
+Depuis l'écran d'accès (`/rdv-…?r=…`), l'organisateur ouvre « Inviter par e-mail » et saisit les
+adresses, puis envoie. Chaque invité reçoit le nom de la réunion, l'heure en clair (heure de
+Paris), le lien complet et le rappel qu'aucun compte n'est nécessaire. Le **rappel de l'organisateur est facultatif** : champ vide, aucun message ne lui est
 envoyé ; une adresse saisie mais invalide est refusée. Il peut ensuite **fermer la page** : la
 réunion RealtimeKit existe déjà, rien ne dépend de l'onglet resté ouvert.
 

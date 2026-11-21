@@ -6,29 +6,13 @@ import { Notice } from '../ui/Notice'
 import { TextField } from '../ui/TextField'
 import { readHostSession } from '../../meeting/hostSession'
 import { MeetingApiError, sendMeetingInvitations } from '../../meeting/rtkApi'
+import { formatStartLabel } from '../../lib/schedule'
 
 /** Adresse acceptée : partie locale, arobase, domaine pointé. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i
 
 /** Invités par envoi (le serveur plafonne l'ensemble à six adresses). */
 const MAX_GUESTS = 5
-
-function pad(value: number): string {
-  return String(value).padStart(2, '0')
-}
-
-/** Valeur d'un `<input type="datetime-local">` : heure locale, sans secondes. */
-function toInputValue(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** Créneau proposé : dans une heure, arrondi aux cinq minutes suivantes. */
-function defaultStart(): string {
-  const date = new Date(Date.now() + 60 * 60_000)
-  date.setSeconds(0, 0)
-  date.setMinutes(Math.ceil(date.getMinutes() / 5) * 5)
-  return toInputValue(date)
-}
 
 /**
  * Adresses saisies, séparées par des retours à la ligne, des virgules ou des
@@ -55,24 +39,31 @@ export interface InviteByEmailPanelProps {
   meetingId: string
   realtimeKitId: string
   meetingName: string
+  /** Créneau saisi à la création ; `null` s'il n'est pas connu de ce navigateur. */
+  startsAt: string | null
 }
 
 /**
  * Invitation par e-mail, depuis l'écran d'accès à la réunion.
  *
- * L'organisateur saisit les adresses, la date et l'heure du rendez-vous ; le
- * Worker envoie à chacune — et à lui-même — un message contenant le lien et
- * l'heure. Il peut ensuite fermer la page : la réunion RealtimeKit existe déjà,
- * et les invités n'ont besoin que du lien.
+ * L'organisateur saisit les adresses ; la date et l'heure viennent de la
+ * création de la réunion et ne sont pas ressaisies ici. Le Worker envoie à
+ * chaque invité — et à l'organisateur s'il l'a demandé — un message contenant le
+ * lien et l'heure. Il peut ensuite fermer la page : la réunion RealtimeKit
+ * existe déjà, et les invités n'ont besoin que du lien.
  *
  * Le message est rédigé côté serveur (nom réel de la réunion, heure de Paris) :
  * ce formulaire ne transmet que des adresses et un horodatage.
  */
-export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: InviteByEmailPanelProps) {
+export function InviteByEmailPanel({
+  meetingId,
+  realtimeKitId,
+  meetingName,
+  startsAt,
+}: InviteByEmailPanelProps) {
   const [open, setOpen] = useState(false)
   const [guests, setGuests] = useState('')
   const [hostEmail, setHostEmail] = useState('')
-  const [startsAt, setStartsAt] = useState(defaultStart)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -109,13 +100,10 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
       return
     }
 
-    const when = new Date(startsAt)
-    if (Number.isNaN(when.getTime())) {
-      setError('Indiquez une date et une heure de rendez-vous.')
-      return
-    }
-    if (when.getTime() < Date.now() - 60 * 60_000) {
-      setError('Choisissez une date et une heure à venir.')
+    if (!startsAt) {
+      setError(
+        "La date de cette réunion n'est pas connue de ce navigateur. Recréez la réunion depuis l'accueil pour envoyer les invitations.",
+      )
       return
     }
 
@@ -127,7 +115,7 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
       const report = await sendMeetingInvitations({
         meetingId,
         realtimeKitId,
-        startsAt: when.toISOString(),
+        startsAt,
         guests: valid,
         hostEmail: normalizedHost.length > 0 ? normalizedHost : undefined,
         hostToken: session.token,
@@ -222,13 +210,15 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
         hint="Facultatif : laissez vide pour ne pas recevoir de rappel. Sinon, vous recevez le même lien avec l'heure du rendez-vous."
       />
 
-      <TextField
-        label="Rendez-vous"
-        type="datetime-local"
-        value={startsAt}
-        onChange={(event) => setStartsAt(event.target.value)}
-        hint="Heure locale ; le message l'indique en heure de Paris."
-      />
+      {/* Le créneau vient de la création : il n'est pas ressaisi ici, mais
+          rappelé pour que l'organisateur sache ce qui partira. */}
+      <div className="flex flex-col gap-1 rounded-xl border border-ink-600 bg-ink-850 px-3.5 py-2.5">
+        <span className="text-sm font-medium text-slate-200">Date et heure</span>
+        <span className="text-sm text-slate-300">
+          {startsAt ? formatStartLabel(startsAt) : 'Non enregistrée sur cet appareil'}
+        </span>
+        <span className="text-xs text-slate-400">Choisie à la création de la réunion.</span>
+      </div>
 
       {error ? (
         <Notice tone="danger" title="Envoi impossible">
@@ -242,7 +232,7 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
         </Notice>
       ) : null}
 
-      <Button onClick={() => void handleSend()} disabled={busy} className="w-full">
+      <Button onClick={() => void handleSend()} disabled={busy || !startsAt} className="w-full">
         {busy ? (
           <Loader2 aria-hidden="true" className="size-5 animate-spin" />
         ) : (
