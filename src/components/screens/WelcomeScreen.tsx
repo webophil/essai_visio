@@ -20,6 +20,8 @@ import { parseMeetingLink } from '../../lib/format'
 import type { MeetingLink } from '../../lib/format'
 import { DEFAULT_MEETING_TITLE, MAX_MEETING_TITLE_LENGTH } from '../../lib/meetingTitle'
 import { readHostSession } from '../../meeting/hostSession'
+import { readLastMeeting } from '../../meeting/lastMeeting'
+import type { LastMeeting } from '../../meeting/lastMeeting'
 import { checkApiAvailability } from '../../meeting/rtkApi'
 import { useCreateMeeting } from '../../meeting/useCreateMeeting'
 
@@ -59,6 +61,8 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
   const [hostDialogOpen, setHostDialogOpen] = useState(false)
   const [hostReady, setHostReady] = useState(() => readHostSession() !== null)
   const [apiAvailable, setApiAvailable] = useState<boolean | null>(null)
+  /** Dernière réunion créée, proposée uniquement à l'organisateur connecté. */
+  const [lastMeeting, setLastMeeting] = useState<LastMeeting | null>(null)
 
   const { start, busy, error: createError, clearError } = useCreateMeeting()
 
@@ -71,6 +75,12 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
       active = false
     }
   }, [])
+
+  // Le raccourci n'apparaît qu'avec une session organisateur : le stockage est
+  // propre au navigateur, un invité ne le voit jamais.
+  useEffect(() => {
+    if (hostReady) setLastMeeting(readLastMeeting())
+  }, [hostReady])
 
   const handleCreate = () => {
     clearError()
@@ -196,6 +206,27 @@ export function WelcomeScreen({ onJoinMeeting }: WelcomeScreenProps) {
             )}
             {hostReady ? 'Créer une réunion' : 'Créer une réunion (organisateur)'}
           </Button>
+
+          {/* Raccourci réservé à l'organisateur : rejoint la dernière réunion
+              créée sans recoller son lien. */}
+          {hostReady && lastMeeting ? (
+            <Button
+              size="lg"
+              variant="secondary"
+              className="w-full"
+              onClick={() =>
+                onJoinMeeting({
+                  meetingId: lastMeeting.meetingId,
+                  realtimeKitId: lastMeeting.realtimeKitId,
+                })
+              }
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Video aria-hidden="true" className="size-5 shrink-0" />
+                <span className="truncate">Rejoindre « {lastMeeting.title} »</span>
+              </span>
+            </Button>
+          ) : null}
 
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <span className="h-px flex-1 bg-ink-700" />

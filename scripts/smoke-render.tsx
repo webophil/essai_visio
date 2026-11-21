@@ -29,6 +29,7 @@ import type { MeetingContextValue } from '../src/state/meetingContext'
 import { MeetingScreen } from '../src/components/screens/MeetingScreen'
 import { UnknownRouteScreen } from '../src/components/screens/UnknownRouteScreen'
 import { WelcomeScreen } from '../src/components/screens/WelcomeScreen'
+import { readLastMeeting } from '../src/meeting/lastMeeting'
 import { remoteAudioTracks } from '../src/media/remoteAudio'
 import { CHAT_BOTTOM_THRESHOLD, isScrolledToBottom } from '../src/lib/chatScroll'
 import { createMeetingId, generateUuid, isRealtimeKitId, meetingDisplayName, parseMeetingInput } from '../src/lib/ids'
@@ -1037,6 +1038,8 @@ checks.push({
     expect(html.includes('Accès organisateur'), 'accès protégé de l’organisateur')
     expect(html.includes('Nom de la réunion'), 'champ du nom de réunion')
     expect(html.includes(DEFAULT_MEETING_TITLE), 'nom de réunion par défaut proposé')
+    expect(!html.includes('Rejoindre «'), 'aucun raccourci sans réunion mémorisée')
+    expect(readLastMeeting() === null, 'aucune réunion mémorisée hors navigateur')
     expect(html.includes('PhilDEV'), 'marque PhilDEV')
     expect(html.includes('Visio'), 'marque Visio')
     expect(html.includes('lang="fr"') === false, 'aucun attribut parasite')

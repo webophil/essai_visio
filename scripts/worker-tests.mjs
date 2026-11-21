@@ -710,6 +710,46 @@ await testAsync('sans secret d’envoi, l’invitation est refusée proprement',
   assert.equal((await response.json()).error, 'mail-not-configured')
 })
 
+await testAsync('sans adresse de rappel, l’organisateur ne reçoit aucun message', async () => {
+  mailSends.length = 0
+  const token = await login('10.3.0.4')
+  const realtimeKitId = seedMeeting()
+  rtkTitles.set(realtimeKitId, 'Rendez-vous Aurore Studer')
+
+  const response = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.3.0.4' },
+    body: invitationBody(realtimeKitId, { guests: ['aurore@exemple.fr'], hostEmail: undefined }),
+  })
+
+  assert.equal(response.status, 200)
+  const report = await readJson(response, 'invitations')
+  assert.equal(report.sent, 1, 'seul l’invité doit recevoir un message')
+  assert.equal(mailSends.length, 1)
+  assert.equal(mailSends[0].to, 'aurore@exemple.fr')
+  assert.equal(
+    mailSends.some((mail) => String(mail.subject).startsWith('Rappel')),
+    false,
+    'aucun rappel organisateur attendu',
+  )
+})
+
+await testAsync('une adresse de rappel invalide est refusée', async () => {
+  mailSends.length = 0
+  const token = await login('10.3.0.5')
+  const realtimeKitId = seedMeeting()
+
+  const response = await appRequest('/api/meetings/aurore/invitations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-PhilDEV-Host': token, 'CF-Connecting-IP': '10.3.0.5' },
+    body: invitationBody(realtimeKitId, { hostEmail: 'pas-une-adresse' }),
+  })
+
+  assert.equal(response.status, 400)
+  assert.equal((await response.json()).error, 'recipients-invalid')
+  assert.equal(mailSends.length, 0, 'aucun envoi ne doit partir')
+})
+
 await testAsync('chaque destinataire reçoit son propre message, avec lien et heure', async () => {
   mailSends.length = 0
   const token = await login('10.3.0.3')

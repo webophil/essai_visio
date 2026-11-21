@@ -357,7 +357,7 @@ L'identifiant de compte (`adad9ec2e55b7a9279e74eea378c3a54`) et l'application Re
 | `GET` | `/api/version` | public | Version applicative et commit Git réellement déployés |
 | `POST` | `/api/host/session` | clé organisateur | Échange la clé contre une session signée (30 jours) |
 | `POST` | `/api/meetings` | **session hôte** | Crée une réunion et réserve l'emplacement de l'organisateur |
-| `POST` | `/api/meetings/:id/invitations` | **session hôte** | Envoie le lien et l'heure du rendez-vous par e-mail (invités puis organisateur) |
+| `POST` | `/api/meetings/:id/invitations` | **session hôte** | Envoie le lien et l'heure du rendez-vous par e-mail (invités, et organisateur s'il l'a demandé) |
 | `GET` | `/api/meetings/:id` | public | Nom de la réunion (identifiant et titre uniquement) |
 | `POST` | `/api/rtk/token` | public (invité) / session (hôte) | Délivre un jeton de participation |
 | `GET` | `/api/rtk/diagnostic` | **session hôte** | État en lecture seule (presets, configuration) — aucun secret |
@@ -393,10 +393,16 @@ réponses.
 ## Invitations par e-mail
 
 Depuis l'écran d'accès (`/rdv-…?r=…`), l'organisateur ouvre « Inviter par e-mail », saisit les
-adresses, la date et l'heure du rendez-vous, puis envoie. Chaque adresse — la sienne comprise —
-reçoit le nom de la réunion, l'heure en clair (heure de Paris), le lien complet et le rappel
-qu'aucun compte n'est nécessaire. Il peut ensuite **fermer la page** : la réunion RealtimeKit
-existe déjà, rien ne dépend de l'onglet resté ouvert.
+adresses, la date et l'heure du rendez-vous, puis envoie. Chaque invité reçoit le nom de la
+réunion, l'heure en clair (heure de Paris), le lien complet et le rappel qu'aucun compte n'est
+nécessaire. Le **rappel de l'organisateur est facultatif** : champ vide, aucun message ne lui est
+envoyé ; une adresse saisie mais invalide est refusée. Il peut ensuite **fermer la page** : la
+réunion RealtimeKit existe déjà, rien ne dépend de l'onglet resté ouvert.
+
+Après une création, l'écran d'accueil propose à l'organisateur connecté un bouton
+**« Rejoindre « nom » »**, placé au-dessus du champ de lien : la dernière réunion est mémorisée
+dans le navigateur (identifiant lisible, identifiant Cloudflare, titre), le lien d'invitation
+restant la référence. Un invité ne voit jamais ce raccourci.
 
 Trois choix tenus côté Worker :
 

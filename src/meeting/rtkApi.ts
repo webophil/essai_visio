@@ -234,16 +234,17 @@ export function fetchDiagnostic(hostToken: string): Promise<DiagnosticReport> {
 }
 
 /**
- * Envoie le lien du rendez-vous par e-mail, à chaque invité puis à
- * l'organisateur. Seules les données partent : le message est rédigé par le
- * Worker, avec le nom réel de la réunion.
+ * Envoie le lien du rendez-vous par e-mail, à chaque invité puis, si elle est
+ * fournie, à l'organisateur. Seules les données partent : le message est rédigé
+ * par le Worker, avec le nom réel de la réunion.
  */
 export function sendMeetingInvitations(options: {
   meetingId: string
   realtimeKitId: string
   startsAt: string
   guests: string[]
-  hostEmail: string
+  /** Adresse de rappel de l'organisateur ; absente ou vide = aucun rappel. */
+  hostEmail?: string
   hostToken: string
 }): Promise<InvitationReport> {
   return callApi<InvitationReport>(

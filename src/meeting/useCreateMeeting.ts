@@ -5,6 +5,7 @@ import { meetingPath } from '../lib/format'
 import { normalizeMeetingTitle } from '../lib/meetingTitle'
 import { navigate } from '../lib/router'
 import { readHostSession } from './hostSession'
+import { saveLastMeeting } from './lastMeeting'
 import { MeetingApiError, createMeeting } from './rtkApi'
 
 export interface CreateMeetingOptions {
@@ -60,6 +61,10 @@ export function useCreateMeeting(): CreateMeetingController {
         displayName,
         hostToken: session.token,
       })
+
+      // Raccourci d'accueil : l'organisateur retrouve la réunion sans recoller
+      // son lien. Aucune donnée sensible, et le lien reste la référence.
+      saveLastMeeting({ meetingId, realtimeKitId: created.meetingId, title: created.title })
 
       const link = `${meetingPath(meetingId)}?${MEETING_LINK_PARAM}=${encodeURIComponent(created.meetingId)}`
       navigate(link)

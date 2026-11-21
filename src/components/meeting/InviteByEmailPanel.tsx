@@ -101,9 +101,11 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
       return
     }
 
+    // Rappel facultatif : vide = aucun message à l'organisateur ; une adresse
+    // saisie mais invalide est signalée plutôt que silencieusement ignorée.
     const normalizedHost = hostEmail.trim().toLowerCase()
-    if (!EMAIL_PATTERN.test(normalizedHost)) {
-      setError('Indiquez votre adresse e-mail pour recevoir le rappel du lien.')
+    if (normalizedHost.length > 0 && !EMAIL_PATTERN.test(normalizedHost)) {
+      setError("L'adresse de rappel n'est pas valide. Corrigez-la ou laissez le champ vide.")
       return
     }
 
@@ -127,7 +129,7 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
         realtimeKitId,
         startsAt: when.toISOString(),
         guests: valid,
-        hostEmail: normalizedHost,
+        hostEmail: normalizedHost.length > 0 ? normalizedHost : undefined,
         hostToken: session.token,
       })
 
@@ -217,7 +219,7 @@ export function InviteByEmailPanel({ meetingId, realtimeKitId, meetingName }: In
         placeholder="vous@phildev.online"
         value={hostEmail}
         onChange={(event) => setHostEmail(event.target.value)}
-        hint="Vous recevez le même lien, avec l'heure du rendez-vous."
+        hint="Facultatif : laissez vide pour ne pas recevoir de rappel. Sinon, vous recevez le même lien avec l'heure du rendez-vous."
       />
 
       <TextField

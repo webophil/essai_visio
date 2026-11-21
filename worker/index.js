@@ -461,16 +461,19 @@ async function handleMeetingInvitations(request, env, rawMeetingId) {
   const guests = Array.isArray(body.guests)
     ? [...new Set(body.guests.map(normalizeEmail).filter(Boolean))]
     : []
-  const hostEmail = normalizeEmail(body.hostEmail)
+  // Rappel de l'organisateur : facultatif. Vide ou absent = aucun message à
+  // lui ; une adresse fournie mais invalide est refusée explicitement.
+  const rawHostEmail = typeof body.hostEmail === 'string' ? body.hostEmail.trim() : ''
+  const hostEmail = rawHostEmail.length > 0 ? normalizeEmail(rawHostEmail) : null
 
   if (guests.length === 0) {
     return failure(400, 'recipients-invalid', 'Indiquez au moins une adresse e-mail de participant.')
   }
-  if (!hostEmail) {
-    return failure(400, 'recipients-invalid', "Indiquez votre adresse e-mail pour recevoir le rappel du lien.")
+  if (rawHostEmail.length > 0 && !hostEmail) {
+    return failure(400, 'recipients-invalid', "L'adresse de rappel de l'organisateur est invalide.")
   }
 
-  const recipients = [...new Set([...guests, hostEmail])]
+  const recipients = hostEmail ? [...new Set([...guests, hostEmail])] : guests
   if (recipients.length > MAX_INVITATION_RECIPIENTS) {
     return failure(
       400,
