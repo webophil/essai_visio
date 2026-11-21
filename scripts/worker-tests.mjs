@@ -938,8 +938,20 @@ await testAsync('le message tient en un segment, sans lien, avec le nom et l’h
   assert.equal(reminder.encoding, 'gsm7')
   assert.equal(reminder.text.includes('http'), false, 'aucun lien ne doit figurer dans le SMS')
 
+  // Jour à libellé long : le message dépasse 70 caractères mais reste en GSM-7
+  // (limite 160), donc le titre complet doit être conservé.
+  const weekday = buildSmsReminder({
+    title: 'Réunion PhilDEV',
+    startsAt: '2026-11-25T13:30:00.000Z',
+  })
+  assert.ok(weekday.text.includes('Réunion PhilDEV'), 'titre complet attendu')
+  assert.equal(weekday.text.includes('…'), false, 'troncature inutile en GSM-7')
+  assert.equal(weekday.text.length, 72)
+  assert.equal(weekday.segments, 1)
+
+  // Tiret cadratin : bascule en UCS-2 (limite 70), la troncature devient utile.
   const long = buildSmsReminder({
-    title: 'Une réunion beaucoup trop longue pour tenir dans un SMS',
+    title: 'Réunion PhilDEV — équipe produit et partenaires',
     startsAt: '2026-11-23T13:30:00.000Z',
   })
   assert.ok(long.text.length <= 70, `titre long non tronqué (${long.text.length})`)

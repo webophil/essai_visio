@@ -9,9 +9,6 @@
 
 const APPOINTMENT_TIME_ZONE = 'Europe/Paris'
 
-/** Limite d'un segment UCS-2 : garantit un seul SMS quel que soit le titre. */
-const MAX_ONE_SEGMENT = 70
-
 export type SmsEncoding = 'gsm7' | 'ucs2'
 
 export interface SmsEstimate {
@@ -100,8 +97,9 @@ export function estimateSms(text: string): SmsEstimate {
 }
 
 /**
- * Aperçu du rappel envoyé par le serveur, avec la même troncature du titre.
- * Renvoie `null` si la date est inutilisable.
+ * Aperçu du rappel envoyé par le serveur, avec la même règle : le titre complet
+ * tant que le message tient en un segment (160 GSM-7 ou 70 UCS-2), tronqué
+ * seulement au-delà. Renvoie `null` si la date est inutilisable.
  */
 export function buildSmsPreview(
   title: string,
@@ -113,13 +111,14 @@ export function buildSmsPreview(
   const tail = ` ${moment}. Lien envoyé dans votre boite email`
   const rawTitle = title.trim().length > 0 ? title.trim() : 'Réunion PhilDEV'
 
+  const fitsOneSegment = (candidate: string) => estimateSms(candidate).segments <= 1
   const characters = Array.from(rawTitle)
   let fitted = characters.join('')
-  if ((fitted + tail).length > MAX_ONE_SEGMENT) {
+  if (!fitsOneSegment(fitted + tail)) {
     while (characters.length > 1) {
       characters.pop()
       fitted = `${characters.join('')}…`
-      if ((fitted + tail).length <= MAX_ONE_SEGMENT) break
+      if (fitsOneSegment(fitted + tail)) break
     }
   }
 

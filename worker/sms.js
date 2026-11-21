@@ -19,13 +19,6 @@ const DEFAULT_SENDER_ID = 'PhilDEV'
 /** Fuseau affiché dans le rappel (les rendez-vous sont pris à Paris). */
 const APPOINTMENT_TIME_ZONE = 'Europe/Paris'
 
-/**
- * Longueur maximale visée : 70 caractères, la limite d'un segment **UCS-2**.
- * En GSM-7 la limite serait 160, mais plafonner à 70 garantit un seul SMS quel
- * que soit le titre (accents, guillemets, emoji).
- */
-const MAX_ONE_SEGMENT = 70
-
 /** Refus d'envoi normalisé : statut amont et code stable, jamais le corps amont. */
 export class SmsError extends Error {
   constructor(status, code) {
@@ -122,8 +115,9 @@ export function estimateSms(text) {
 
 /**
  * Rédige le rappel : « Réunion PhilDEV lundi 23/11 14H30. Lien envoyé dans
- * votre boite email ». Le titre est tronqué (`…`) pour rester sous 70
- * caractères, donc à un seul segment même en UCS-2.
+ * votre boite email ». Le titre complet est conservé tant que le message tient
+ * en un segment ; il n'est tronqué (`…`) que si la vraie limite est dépassée
+ * (160 caractères en GSM-7, 70 en UCS-2).
  */
 export function buildSmsReminder({ title, startsAt }) {
   const moment = formatSmsMoment(startsAt)
@@ -132,13 +126,14 @@ export function buildSmsReminder({ title, startsAt }) {
   const tail = ` ${moment}. Lien envoyé dans votre boite email`
   const rawTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : 'Réunion PhilDEV'
 
+  const fitsOneSegment = (candidate) => estimateSms(candidate).segments <= 1
   const characters = Array.from(rawTitle)
   let fitted = characters.join('')
-  if ((fitted + tail).length > MAX_ONE_SEGMENT) {
+  if (!fitsOneSegment(fitted + tail)) {
     while (characters.length > 1) {
       characters.pop()
       fitted = `${characters.join('')}…`
-      if ((fitted + tail).length <= MAX_ONE_SEGMENT) break
+      if (fitsOneSegment(fitted + tail)) break
     }
   }
 

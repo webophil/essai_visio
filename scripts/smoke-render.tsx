@@ -1068,6 +1068,16 @@ checks.push({
     expect(preview.segments === 1, 'un seul segment attendu')
     expect(!preview.text.includes('http'), 'aucun lien dans le SMS')
 
+    // Mercredi : 73 caractères, toujours un segment GSM-7 (limite 160).
+    const weekday = buildSmsPreview('Réunion PhilDEV', '2026-11-25T13:30:00.000Z')
+    expect(weekday !== null, 'aperçu du mercredi attendu')
+    if (weekday) {
+      expect(weekday.text.includes('Réunion PhilDEV'), 'titre complet conservé')
+      expect(!weekday.text.includes('…'), 'aucune troncature inutile')
+      expect(weekday.text.length === 72, 'longueur GSM-7 inattendue')
+      expect(weekday.segments === 1, 'un seul segment attendu')
+    }
+
     expect(normalizePhone('06 12 34 56 78') === '+33612345678', 'mobile national non normalisé')
     expect(normalizePhone('+33 6 12 34 56 78') === '+33612345678', 'mobile international non normalisé')
     expect(normalizePhone('0033 6 12 34 56 78') === '+33612345678', 'préfixe 0033 non normalisé')

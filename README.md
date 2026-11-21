@@ -441,10 +441,12 @@ personnes qui ont déjà reçu l'invitation par e-mail. Le SMS **ne contient auc
 
 > Réunion PhilDEV lundi 23/11 14H30. Lien envoyé dans votre boite email
 
-Le texte est rédigé par le Worker à partir du titre RealtimeKit et de l'heure de Paris. Le titre
-est tronqué si nécessaire pour tenir en **70 caractères**, soit **un seul segment** même en UCS-2 :
-un SMS par destinataire, sans découpage. En GSM-7 (accents français compris), la marge est plus
-large encore. L'aperçu affiché dans le panneau est exactement le texte envoyé.
+Le texte est rédigé par le Worker à partir du titre RealtimeKit et de l'heure de Paris. Le calcul
+porte sur la **vraie limite d'un segment** : **160 caractères en GSM-7** (accents français
+compris) et **70 en UCS-2** (guillemet courbe, tiret cadratin, emoji…). Le titre complet est donc
+conservé tant que le message tient en un SMS ; il n'est tronqué (`…`) que si la limite réelle est
+dépassée. Un SMS par destinataire, sans découpage. L'aperçu affiché dans le panneau est exactement
+le texte envoyé.
 
 Côté serveur : `worker/sms.js` appelle `POST https://api.sweego.io/send` avec `channel: "sms"`,
 `campaign-type: "transac"`, `sender-id` (`SWEEGO_SENDER_ID`, défaut `PhilDEV`) et
